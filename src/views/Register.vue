@@ -107,7 +107,7 @@ const register = async () => {
           <div class="form-text">Use at least 8 characters.</div>
         </div>
 
-        <button class="btn btn-primary w-100" type="submit" :disabled="loading">
+        <button class="btn btn-directory-action w-100" type="submit" :disabled="loading">
           <span v-if="loading" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
           {{ loading ? 'Creating account' : 'Register' }}
         </button>

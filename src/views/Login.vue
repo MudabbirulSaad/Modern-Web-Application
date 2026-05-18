@@ -75,7 +75,7 @@ const login = async () => {
           >
         </div>
 
-        <button class="btn btn-primary w-100" type="submit" :disabled="userStore.loading">
+        <button class="btn btn-directory-action w-100" type="submit" :disabled="userStore.loading">
           <span v-if="userStore.loading" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
           {{ userStore.loading ? 'Logging in' : 'Log in' }}
         </button>
