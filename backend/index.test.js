@@ -2,6 +2,7 @@ import request from 'supertest';
 import app from './index';
 import pool from './db';
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 import { jest } from '@jest/globals';
 
 afterAll(async () => {
@@ -386,5 +387,123 @@ describe('POST /api/auth/register', () => {
     expect(mockConn.release).toHaveBeenCalled();
 
     spy.mockRestore();
+  });
+});
+
+describe('POST /api/auth/login', () => {
+  it('should log in a user and issue an HttpOnly JWT cookie', async () => {
+    const passwordHash = await bcrypt.hash('securepass123', 12);
+    const mockUser = {
+      id: 7,
+      username: 'studentone',
+      email: 'student@example.edu',
+      password_hash: passwordHash,
+      role: 'student'
+    };
+    const mockConn = {
+      query: jest.fn().mockResolvedValue([mockUser]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'student@example.edu',
+        password: 'securepass123'
+      });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: {
+        id: 7,
+        username: 'studentone',
+        email: 'student@example.edu',
+        role: 'student'
+      }
+    });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      'SELECT id, username, email, password_hash, role FROM Users WHERE email = ? LIMIT 1',
+      ['student@example.edu']
+    );
+
+    const cookies = res.headers['set-cookie'];
+    expect(cookies).toBeDefined();
+    expect(cookies[0]).toContain('auth_token=');
+    expect(cookies[0]).toContain('HttpOnly');
+    expect(cookies[0]).toContain('SameSite=Strict');
+
+    const token = cookies[0].match(/auth_token=([^;]+)/)[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'development-jwt-secret');
+    expect(decoded).toMatchObject({
+      id: 7,
+      role: 'student'
+    });
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return 401 when the password is incorrect', async () => {
+    const passwordHash = await bcrypt.hash('securepass123', 12);
+    const mockConn = {
+      query: jest.fn().mockResolvedValue([{
+        id: 7,
+        username: 'studentone',
+        email: 'student@example.edu',
+        password_hash: passwordHash,
+        role: 'student'
+      }]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'student@example.edu',
+        password: 'wrongpass123'
+      });
+
+    expect(res.statusCode).toEqual(401);
+    expect(res.body).toEqual({ status: 'error', message: 'Invalid email or password' });
+    expect(res.headers['set-cookie']).toBeUndefined();
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return 401 when the user does not exist', async () => {
+    const mockConn = {
+      query: jest.fn().mockResolvedValue([]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'missing@example.edu',
+        password: 'securepass123'
+      });
+
+    expect(res.statusCode).toEqual(401);
+    expect(res.body).toEqual({ status: 'error', message: 'Invalid email or password' });
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return 400 when required fields are missing', async () => {
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'student@example.edu',
+        password: ''
+      });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'Email and password are required' });
   });
 });
