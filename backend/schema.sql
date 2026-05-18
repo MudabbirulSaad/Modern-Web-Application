@@ -33,8 +33,11 @@ CREATE TABLE IF NOT EXISTS Courses (
   title VARCHAR(255) NOT NULL,
   department VARCHAR(255) NOT NULL,
   description TEXT NOT NULL,
+  normalized_title VARCHAR(255) AS (LOWER(TRIM(title))) STORED,
+  normalized_department VARCHAR(255) AS (LOWER(TRIM(department))) STORED,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uniq_courses_normalized_identity (normalized_title, normalized_department)
 );
 
 CREATE TABLE IF NOT EXISTS Course_Tutors (

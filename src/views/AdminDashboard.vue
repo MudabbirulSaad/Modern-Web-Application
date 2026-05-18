@@ -12,6 +12,7 @@ const deletingTutorId = ref(null)
 const deletingCourseId = ref(null)
 const error = ref('')
 const tutorFormError = ref('')
+const courseFormError = ref('')
 const success = ref('')
 const editingTutorId = ref(null)
 const editingCourseId = ref(null)
@@ -49,6 +50,7 @@ const resetCourseForm = () => {
   courseForm.department = ''
   courseForm.description = ''
   courseForm.tutorIds = []
+  courseFormError.value = ''
 }
 
 const readError = async (response, fallback) => {
@@ -131,6 +133,7 @@ const editCourse = async (course) => {
   courseForm.tutorIds = readCourseTutorIds(course)
   success.value = ''
   error.value = ''
+  courseFormError.value = ''
 
   try {
     const response = await fetch(`/api/courses/${course.id}`)
@@ -188,10 +191,11 @@ const saveTutor = async () => {
 
 const saveCourse = async () => {
   error.value = ''
+  courseFormError.value = ''
   success.value = ''
 
   if (!courseForm.title.trim() || !courseForm.department.trim() || !courseForm.description.trim()) {
-    error.value = 'Title, department, and description are required.'
+    courseFormError.value = 'Title, department, and description are required.'
     return
   }
 
@@ -220,7 +224,7 @@ const saveCourse = async () => {
     resetCourseForm()
     await loadCourses()
   } catch (err) {
-    error.value = err.message || 'Unable to save course.'
+    courseFormError.value = err.message || 'Unable to save course.'
   } finally {
     courseSaving.value = false
   }
@@ -358,6 +362,10 @@ onMounted(() => {
               </template>
 
               <form @submit.prevent="saveCourse">
+                <div v-if="courseFormError" class="alert alert-danger" role="alert">
+                  {{ courseFormError }}
+                </div>
+
                 <div class="mb-3">
                   <label class="form-label" for="course-title">Title</label>
                   <input
