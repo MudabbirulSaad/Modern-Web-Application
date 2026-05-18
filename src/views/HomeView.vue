@@ -1,11 +1,11 @@
 <template>
   <div class="container mt-5">
     <div class="jumbotron">
-      <h1 class="display-4">Welcome to Modern Web Application</h1>
-      <p class="lead">This is a foundational setup with Vue, Vite, Router, Pinia, and Bootstrap 5.</p>
+      <h1 class="display-4">SwinDirectory</h1>
+      <p class="lead">A Swinburne-inspired course and tutor directory for discovering subjects, finding tutors, and comparing student feedback.</p>
       <hr class="my-4">
-      <p>It uses utility classes for typography and spacing to space content out within the larger container.</p>
-      <a class="btn btn-primary btn-lg" href="#" role="button">Learn more</a>
+      <p>Browse courses and tutor profiles, review recent activity, and save favourites as the directory grows.</p>
+      <a class="btn btn-primary btn-lg" href="#" role="button">Explore directory</a>
     </div>
   </div>
 </template>
