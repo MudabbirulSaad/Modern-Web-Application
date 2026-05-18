@@ -65,7 +65,9 @@ describe('GET /api/tutors', () => {
       }
     ];
     const mockConn = {
-      query: jest.fn().mockResolvedValue(mockTutors),
+      query: jest.fn()
+        .mockResolvedValueOnce([{ total: 2 }])
+        .mockResolvedValueOnce(mockTutors),
       release: jest.fn()
     };
     const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
@@ -73,8 +75,9 @@ describe('GET /api/tutors', () => {
     const res = await request(app).get('/api/tutors');
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: mockTutors });
-    expect(mockConn.query).toHaveBeenCalledWith(
+    expect(res.body).toEqual({ status: 'ok', data: mockTutors, total: 2 });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
       'SELECT id, name, department, bio, created_at, updated_at FROM Tutors ORDER BY name ASC'
     );
     expect(mockConn.release).toHaveBeenCalled();
@@ -105,7 +108,9 @@ describe('GET /api/tutors', () => {
       }
     ];
     const mockConn = {
-      query: jest.fn().mockResolvedValue(mockTutors),
+      query: jest.fn()
+        .mockResolvedValueOnce([{ total: 1 }])
+        .mockResolvedValueOnce(mockTutors),
       release: jest.fn()
     };
     const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
@@ -115,10 +120,46 @@ describe('GET /api/tutors', () => {
       .query({ search: 'maya', department: 'Computer Science' });
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: mockTutors });
-    expect(mockConn.query).toHaveBeenCalledWith(
+    expect(res.body).toEqual({ status: 'ok', data: mockTutors, total: 1 });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
       expect.stringContaining('WHERE (name LIKE ? OR bio LIKE ?) AND department = ?'),
       ['%maya%', '%maya%', 'Computer Science']
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should paginate tutors when page and limit queries are provided', async () => {
+    const mockTutors = [
+      {
+        id: 3,
+        name: 'Dr Omar Wright',
+        department: 'Computer Science',
+        bio: 'Teaches software architecture.',
+        created_at: '2026-05-18T00:00:00.000Z',
+        updated_at: '2026-05-18T00:00:00.000Z'
+      }
+    ];
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ total: 5 }])
+        .mockResolvedValueOnce(mockTutors),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/tutors')
+      .query({ page: '2', limit: '2' });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: mockTutors, total: 5 });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      'SELECT id, name, department, bio, created_at, updated_at FROM Tutors ORDER BY name ASC LIMIT ? OFFSET ?',
+      [2, 2]
     );
     expect(mockConn.release).toHaveBeenCalled();
 
@@ -385,7 +426,9 @@ describe('GET /api/courses', () => {
       }
     ];
     const mockConn = {
-      query: jest.fn().mockResolvedValue(mockCourses),
+      query: jest.fn()
+        .mockResolvedValueOnce([{ total: 2 }])
+        .mockResolvedValueOnce(mockCourses),
       release: jest.fn()
     };
     const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
@@ -393,8 +436,9 @@ describe('GET /api/courses', () => {
     const res = await request(app).get('/api/courses');
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: mockCourses });
-    expect(mockConn.query).toHaveBeenCalledWith(
+    expect(res.body).toEqual({ status: 'ok', data: mockCourses, total: 2 });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
       expect.stringContaining('FROM Courses c')
     );
     expect(mockConn.release).toHaveBeenCalled();
@@ -424,7 +468,9 @@ describe('GET /api/courses', () => {
       }
     ];
     const mockConn = {
-      query: jest.fn().mockResolvedValue(mockCourses),
+      query: jest.fn()
+        .mockResolvedValueOnce([{ total: 1 }])
+        .mockResolvedValueOnce(mockCourses),
       release: jest.fn()
     };
     const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
@@ -434,13 +480,48 @@ describe('GET /api/courses', () => {
       .query({ search: 'interface', department: 'Computer Science' });
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: mockCourses });
-    expect(mockConn.query).toHaveBeenCalledWith(
+    expect(res.body).toEqual({ status: 'ok', data: mockCourses, total: 1 });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
       expect.stringContaining('WHERE (c.title LIKE ? OR c.description LIKE ? OR EXISTS ('),
       ['%interface%', '%interface%', '%interface%', 'Computer Science']
     );
-    expect(mockConn.query.mock.calls[0][0]).toContain('t_search.name LIKE ?');
-    expect(mockConn.query.mock.calls[0][0]).toContain('AND c.department = ?');
+    expect(mockConn.query.mock.calls[1][0]).toContain('t_search.name LIKE ?');
+    expect(mockConn.query.mock.calls[1][0]).toContain('AND c.department = ?');
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should paginate courses when page and limit queries are provided', async () => {
+    const mockCourses = [
+      {
+        id: 3,
+        title: 'COS30017 Software Development for Mobile Devices',
+        department: 'Computer Science',
+        description: 'Build mobile software with contemporary tooling.',
+        tutor_names: 'Dr Maya Chen'
+      }
+    ];
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ total: 6 }])
+        .mockResolvedValueOnce(mockCourses),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/courses')
+      .query({ page: '2', limit: '3' });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: mockCourses, total: 6 });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('LIMIT ? OFFSET ?'),
+      [3, 3]
+    );
     expect(mockConn.release).toHaveBeenCalled();
 
     spy.mockRestore();
