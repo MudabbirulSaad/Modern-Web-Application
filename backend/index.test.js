@@ -91,3 +91,51 @@ describe('GET /api/tutors', () => {
     spy.mockRestore();
   });
 });
+
+describe('GET /api/courses', () => {
+  it('should return the list of courses with linked tutors from the database', async () => {
+    const mockCourses = [
+      {
+        id: 1,
+        title: 'COS30043 Interface Design and Development',
+        department: 'Computer Science',
+        description: 'Design and build responsive web interfaces using modern frontend practices.',
+        tutor_names: 'Dr Maya Chen'
+      },
+      {
+        id: 2,
+        title: 'COS20031 Database Design',
+        department: 'Information Systems',
+        description: 'Model, normalize, and query relational data for software applications.',
+        tutor_names: 'Prof Liam Patel'
+      }
+    ];
+    const mockConn = {
+      query: jest.fn().mockResolvedValue(mockCourses),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app).get('/api/courses');
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: mockCourses });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      expect.stringContaining('FROM Courses c')
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return 500 when courses cannot be fetched', async () => {
+    const spy = jest.spyOn(pool, 'getConnection').mockRejectedValue(new Error('Connection failed'));
+
+    const res = await request(app).get('/api/courses');
+
+    expect(res.statusCode).toEqual(500);
+    expect(res.body).toEqual({ status: 'error', message: 'Unable to fetch courses' });
+
+    spy.mockRestore();
+  });
+});
