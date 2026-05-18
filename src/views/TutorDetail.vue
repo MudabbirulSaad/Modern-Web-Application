@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
+import ReviewSection from '../components/ReviewSection.vue'
 
 const route = useRoute()
 const tutor = ref(null)
@@ -56,15 +57,19 @@ onMounted(async () => {
       Tutor profile not found.
     </div>
 
-    <BaseCard v-else>
-      <template #header>
-        <span class="badge rounded-pill text-bg-light border">{{ tutor.department }}</span>
-      </template>
+    <div v-else class="vstack gap-4">
+      <BaseCard>
+        <template #header>
+          <span class="badge rounded-pill text-bg-light border">{{ tutor.department }}</span>
+        </template>
 
-      <p class="text-uppercase text-primary fw-bold small mb-2">Tutor Profile</p>
-      <h1 class="mb-4">{{ tutor.name }}</h1>
-      <p class="lead text-body-secondary mb-0">{{ tutor.bio }}</p>
-    </BaseCard>
+        <p class="text-uppercase text-primary fw-bold small mb-2">Tutor Profile</p>
+        <h1 class="mb-4">{{ tutor.name }}</h1>
+        <p class="lead text-body-secondary mb-0">{{ tutor.bio }}</p>
+      </BaseCard>
+
+      <ReviewSection entity-type="tutor" :entity-id="tutor.id" />
+    </div>
   </section>
 </template>
 
