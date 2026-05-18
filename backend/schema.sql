@@ -76,6 +76,17 @@ CREATE TABLE IF NOT EXISTS Review_Upvotes (
     ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS Favorites (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  entity_type ENUM('tutor', 'course') NOT NULL,
+  entity_id INT NOT NULL,
+  CONSTRAINT fk_favorites_user
+    FOREIGN KEY (user_id) REFERENCES Users(id)
+    ON DELETE CASCADE,
+  UNIQUE KEY uniq_favorites_user_entity (user_id, entity_type, entity_id)
+);
+
 INSERT INTO Courses (id, title, department, description)
 VALUES
   (1, 'COS30043 Interface Design and Development', 'Computer Science', 'Design and build responsive web interfaces using modern frontend practices.'),

@@ -2,12 +2,17 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
+import FavoriteButton from '../components/common/FavoriteButton.vue'
 import ReviewSection from '../components/ReviewSection.vue'
+import { useUserStore } from '../store/userStore'
 
 const route = useRoute()
+const userStore = useUserStore()
 const course = ref(null)
 const loading = ref(true)
 const error = ref('')
+const favoriteError = ref('')
+const favoriteLoading = ref(false)
 const notFound = ref(false)
 
 const tutors = computed(() => course.value?.tutors || [])
@@ -15,7 +20,9 @@ const hasTutors = computed(() => tutors.value.length > 0)
 
 onMounted(async () => {
   try {
-    const response = await fetch(`/api/courses/${route.params.id}`)
+    const response = await fetch(`/api/courses/${route.params.id}`, {
+      credentials: 'include'
+    })
 
     if (response.status === 404) {
       notFound.value = true
@@ -34,6 +41,41 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+const toggleFavorite = async () => {
+  if (!userStore.isStudent || !course.value || favoriteLoading.value) {
+    return
+  }
+
+  favoriteError.value = ''
+  favoriteLoading.value = true
+
+  try {
+    const nextState = !course.value.has_favorite
+    const response = await fetch(`/api/users/${userStore.userId}/favorites`, {
+      method: nextState ? 'POST' : 'DELETE',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        entity_type: 'course',
+        entity_id: course.value.id
+      })
+    })
+    const payload = await response.json()
+
+    if (!response.ok) {
+      throw new Error(payload.message || 'Unable to update favorite')
+    }
+
+    course.value = { ...course.value, has_favorite: nextState }
+  } catch (err) {
+    favoriteError.value = 'Favorite could not be updated. Please try again.'
+  } finally {
+    favoriteLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -64,9 +106,18 @@ onMounted(async () => {
     <div v-else class="vstack gap-4">
       <BaseCard>
         <template #header>
-          <span class="badge rounded-pill text-bg-light border">{{ course.department }}</span>
+          <div class="d-flex justify-content-between gap-3 align-items-center">
+            <span class="badge rounded-pill text-bg-light border">{{ course.department }}</span>
+            <FavoriteButton
+              v-if="userStore.isStudent"
+              :active="course.has_favorite"
+              :disabled="favoriteLoading"
+              @toggle="toggleFavorite"
+            />
+          </div>
         </template>
 
+        <div v-if="favoriteError" class="alert alert-warning" role="alert">{{ favoriteError }}</div>
         <p class="text-uppercase text-primary fw-bold small mb-2">Course Details</p>
         <h1 class="mb-4">{{ course.title }}</h1>
         <p class="lead text-body-secondary mb-0">{{ course.description }}</p>

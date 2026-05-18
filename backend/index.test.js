@@ -1238,3 +1238,115 @@ describe('Review endpoints', () => {
     spy.mockRestore();
   });
 });
+
+describe('Favorite endpoints', () => {
+  const studentCookie = (id = 7) => {
+    const token = jwt.sign(
+      { id, role: 'student' },
+      process.env.JWT_SECRET || 'development-jwt-secret',
+      { expiresIn: '7d' }
+    );
+    return [`auth_token=${token}`];
+  };
+
+  const adminCookie = () => {
+    const token = jwt.sign(
+      { id: 1, role: 'admin' },
+      process.env.JWT_SECRET || 'development-jwt-secret',
+      { expiresIn: '7d' }
+    );
+    return [`auth_token=${token}`];
+  };
+
+  it('should save a favorite for the authenticated student', async () => {
+    const favorite = {
+      id: 3,
+      user_id: 7,
+      entity_type: 'course',
+      entity_id: 2
+    };
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce({ insertId: 3 })
+        .mockResolvedValueOnce([favorite]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/users/7/favorites')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'course',
+        entity_id: 2
+      });
+
+    expect(res.statusCode).toEqual(201);
+    expect(res.body).toEqual({ status: 'ok', data: favorite });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      'INSERT INTO Favorites (user_id, entity_type, entity_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)',
+      [7, 'course', 2]
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      'SELECT id, user_id, entity_type, entity_id FROM Favorites WHERE id = ? LIMIT 1',
+      [3]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should remove a saved favorite for the authenticated student', async () => {
+    const mockConn = {
+      query: jest.fn().mockResolvedValue({ affectedRows: 1 }),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .delete('/api/users/7/favorites')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'tutor',
+        entity_id: 4
+      });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', message: 'Favorite removed' });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      'DELETE FROM Favorites WHERE user_id = ? AND entity_type = ? AND entity_id = ?',
+      [7, 'tutor', 4]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should reject favorites for another user id', async () => {
+    const res = await request(app)
+      .post('/api/users/8/favorites')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'course',
+        entity_id: 2
+      });
+
+    expect(res.statusCode).toEqual(403);
+    expect(res.body).toEqual({ status: 'error', message: 'Cannot manage favorites for another user' });
+  });
+
+  it('should reject favorites from non-students', async () => {
+    const res = await request(app)
+      .post('/api/users/1/favorites')
+      .set('Cookie', adminCookie())
+      .send({
+        entity_type: 'course',
+        entity_id: 2
+      });
+
+    expect(res.statusCode).toEqual(403);
+    expect(res.body).toEqual({ status: 'error', message: 'Student access required' });
+  });
+});
