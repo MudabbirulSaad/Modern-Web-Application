@@ -96,6 +96,75 @@ h1, h2, h3, h4, h5, h6 {
   --bs-btn-focus-shadow-rgb: var(--swinburne-punch-rgb);
 }
 
+.btn-directory-action {
+  --bs-btn-font-weight: 700;
+  --bs-btn-color: var(--swinburne-white);
+  --bs-btn-bg: var(--swinburne-punch);
+  --bs-btn-border-color: var(--swinburne-punch);
+  --bs-btn-hover-color: var(--swinburne-white);
+  --bs-btn-hover-bg: var(--swinburne-red-berry);
+  --bs-btn-hover-border-color: var(--swinburne-red-berry);
+  --bs-btn-focus-shadow-rgb: var(--swinburne-punch-rgb);
+  --bs-btn-active-color: var(--swinburne-white);
+  --bs-btn-active-bg: var(--swinburne-red-berry);
+  --bs-btn-active-border-color: var(--swinburne-red-berry);
+  --bs-btn-disabled-color: var(--swinburne-white);
+  --bs-btn-disabled-bg: var(--swinburne-disabled-bg);
+  --bs-btn-disabled-border-color: var(--swinburne-disabled-border);
+}
+
+.btn-directory-action-secondary {
+  --bs-btn-font-weight: 700;
+  --bs-btn-color: var(--swinburne-punch);
+  --bs-btn-bg: transparent;
+  --bs-btn-border-color: var(--swinburne-punch);
+  --bs-btn-hover-color: var(--swinburne-white);
+  --bs-btn-hover-bg: var(--swinburne-punch);
+  --bs-btn-hover-border-color: var(--swinburne-punch);
+  --bs-btn-focus-shadow-rgb: var(--swinburne-punch-rgb);
+  --bs-btn-active-color: var(--swinburne-white);
+  --bs-btn-active-bg: var(--swinburne-red-berry);
+  --bs-btn-active-border-color: var(--swinburne-red-berry);
+  --bs-btn-disabled-color: var(--swinburne-disabled-border);
+  --bs-btn-disabled-bg: transparent;
+  --bs-btn-disabled-border-color: var(--swinburne-disabled-border);
+}
+
+.btn-favorite {
+  --bs-btn-font-weight: 700;
+  --bs-btn-focus-shadow-rgb: var(--swinburne-punch-rgb);
+}
+
+.btn-favorite-unsaved {
+  --bs-btn-color: var(--swinburne-punch);
+  --bs-btn-bg: transparent;
+  --bs-btn-border-color: var(--swinburne-punch);
+  --bs-btn-hover-color: var(--swinburne-white);
+  --bs-btn-hover-bg: var(--swinburne-punch);
+  --bs-btn-hover-border-color: var(--swinburne-punch);
+  --bs-btn-active-color: var(--swinburne-white);
+  --bs-btn-active-bg: var(--swinburne-red-berry);
+  --bs-btn-active-border-color: var(--swinburne-red-berry);
+  --bs-btn-disabled-color: var(--swinburne-disabled-border);
+  --bs-btn-disabled-bg: transparent;
+  --bs-btn-disabled-border-color: var(--swinburne-disabled-border);
+}
+
+.btn-favorite-saved {
+  --bs-btn-color: var(--swinburne-black);
+  --bs-btn-bg: var(--swinburne-supernova);
+  --bs-btn-border-color: var(--swinburne-supernova);
+  --bs-btn-hover-color: var(--swinburne-black);
+  --bs-btn-hover-bg: #E9BD00;
+  --bs-btn-hover-border-color: #D9AF00;
+  --bs-btn-active-color: var(--swinburne-black);
+  --bs-btn-active-bg: #D9AF00;
+  --bs-btn-active-border-color: #C9A100;
+  --bs-btn-disabled-color: var(--swinburne-black);
+  --bs-btn-disabled-bg: #F4D84F;
+  --bs-btn-disabled-border-color: #D8B900;
+}
+
 [data-bs-theme="dark"] .btn-primary {
   --bs-btn-color: var(--swinburne-white);
   --bs-btn-bg: var(--swinburne-punch);
@@ -128,6 +197,33 @@ h1, h2, h3, h4, h5, h6 {
   --bs-btn-hover-color: #FF6B65;
   --bs-btn-active-color: var(--swinburne-supernova);
   --bs-btn-disabled-color: #8F8F8F;
+  --bs-btn-focus-shadow-rgb: 254, 206, 0;
+}
+
+[data-bs-theme="dark"] .btn-directory-action {
+  --bs-btn-hover-bg: #B51C18;
+  --bs-btn-hover-border-color: #FF6B65;
+  --bs-btn-focus-shadow-rgb: 254, 206, 0;
+  --bs-btn-active-bg: var(--swinburne-red-berry);
+  --bs-btn-active-border-color: #FF6B65;
+}
+
+[data-bs-theme="dark"] .btn-directory-action-secondary,
+[data-bs-theme="dark"] .btn-favorite-unsaved {
+  --bs-btn-color: #FF6B65;
+  --bs-btn-border-color: #FF6B65;
+  --bs-btn-hover-color: var(--swinburne-black);
+  --bs-btn-hover-bg: var(--swinburne-white);
+  --bs-btn-hover-border-color: var(--swinburne-white);
+  --bs-btn-focus-shadow-rgb: 254, 206, 0;
+  --bs-btn-active-color: var(--swinburne-white);
+  --bs-btn-active-bg: var(--swinburne-red-berry);
+  --bs-btn-active-border-color: #FF6B65;
+  --bs-btn-disabled-color: #8F8F8F;
+  --bs-btn-disabled-border-color: #6C6C6C;
+}
+
+[data-bs-theme="dark"] .btn-favorite-saved {
   --bs-btn-focus-shadow-rgb: 254, 206, 0;
 }
 

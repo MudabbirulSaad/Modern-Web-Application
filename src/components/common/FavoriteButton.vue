@@ -7,6 +7,10 @@ defineProps({
   disabled: {
     type: Boolean,
     default: false
+  },
+  loading: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -16,12 +20,13 @@ defineEmits(['toggle'])
 <template>
   <button
     type="button"
-    class="btn btn-sm"
-    :class="active ? 'btn-primary' : 'btn-outline-primary'"
-    :disabled="disabled"
+    class="btn btn-sm btn-favorite"
+    :class="active ? 'btn-favorite-saved' : 'btn-favorite-unsaved'"
+    :disabled="disabled || loading"
     :aria-pressed="active ? 'true' : 'false'"
+    :aria-busy="loading ? 'true' : 'false'"
     @click="$emit('toggle')"
   >
-    {{ active ? 'Saved' : 'Favorite' }}
+    {{ loading ? 'Updating...' : active ? 'Saved' : 'Favorite' }}
   </button>
 </template>

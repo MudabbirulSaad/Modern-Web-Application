@@ -252,7 +252,7 @@ const toggleFavorite = async (course) => {
               <FavoriteButton
                 v-if="userStore.isStudent"
                 :active="course.has_favorite"
-                :disabled="isUpdatingFavorite(course.id)"
+                :loading="isUpdatingFavorite(course.id)"
                 @toggle="toggleFavorite(course)"
               />
             </div>
@@ -265,7 +265,7 @@ const toggleFavorite = async (course) => {
             <p class="small text-uppercase fw-bold text-body-secondary mb-1">Tutors</p>
             <p class="mb-0">{{ course.tutor_names || 'Tutors to be announced' }}</p>
             <RouterLink
-              class="btn btn-outline-primary btn-sm mt-3"
+              class="btn btn-directory-action btn-sm mt-3"
               :to="{ name: 'course-detail', params: { id: course.id } }"
             >
               View course
