@@ -1,9 +1,11 @@
 import express from 'express';
 import cors from 'cors';
+import bcrypt from 'bcrypt';
 import pool from './db.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const SALT_ROUNDS = 12;
 
 app.use(cors());
 app.use(express.json());
@@ -21,6 +23,50 @@ app.get('/api/db-test', async (req, res) => {
   } catch (err) {
     console.error('Database error:', err);
     res.status(500).json({ status: 'error', message: 'Database connection failed' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/auth/register', async (req, res) => {
+  const username = String(req.body.username || '').trim();
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const password = String(req.body.password || '');
+
+  if (!username || !email || !password) {
+    res.status(400).json({ status: 'error', message: 'Username, email, and password are required' });
+    return;
+  }
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const countRows = await conn.query('SELECT COUNT(*) AS user_count FROM Users');
+    const userCount = Number(countRows[0]?.user_count || 0);
+    const role = userCount === 0 ? 'admin' : 'student';
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    const result = await conn.query(
+      'INSERT INTO Users (username, email, password_hash, role) VALUES (?, ?, ?, ?)',
+      [username, email, passwordHash, role]
+    );
+
+    res.status(201).json({
+      status: 'ok',
+      data: {
+        id: Number(result.insertId),
+        username,
+        email,
+        role
+      }
+    });
+  } catch (err) {
+    if (err.code === 'ER_DUP_ENTRY') {
+      res.status(409).json({ status: 'error', message: 'Username or email already exists' });
+      return;
+    }
+
+    console.error('Registration error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to register user' });
   } finally {
     if (conn) conn.release();
   }

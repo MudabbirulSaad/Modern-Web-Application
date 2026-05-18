@@ -7,6 +7,14 @@ CREATE TABLE IF NOT EXISTS Tutors (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS Users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(100) NOT NULL UNIQUE,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  role ENUM('admin', 'student') NOT NULL DEFAULT 'student'
+);
+
 INSERT INTO Tutors (id, name, department, bio)
 VALUES
   (1, 'Dr Maya Chen', 'Computer Science', 'Specialises in web development, interface design, and human-computer interaction.'),
