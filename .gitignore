@@ -11,6 +11,10 @@ node_modules
 dist
 dist-ssr
 *.local
+.afk/
+docs/
+issues/
+jit/
 
 # Editor directories and files
 .vscode/*
