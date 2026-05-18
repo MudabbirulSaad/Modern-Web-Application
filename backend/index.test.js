@@ -3,6 +3,10 @@ import app from './index';
 import pool from './db';
 import { jest } from '@jest/globals';
 
+afterAll(async () => {
+  await pool.end();
+});
+
 describe('GET /api/health', () => {
   it('should return status ok', async () => {
     const res = await request(app).get('/api/health');
@@ -34,6 +38,56 @@ describe('GET /api/db-test', () => {
     expect(res.statusCode).toEqual(500);
     expect(res.body).toEqual({ status: 'error', message: 'Database connection failed' });
     
+    spy.mockRestore();
+  });
+});
+
+describe('GET /api/tutors', () => {
+  it('should return the list of tutors from the database', async () => {
+    const mockTutors = [
+      {
+        id: 1,
+        name: 'Dr Maya Chen',
+        department: 'Computer Science',
+        bio: 'Specialises in web development and human-computer interaction.',
+        created_at: '2026-05-18T00:00:00.000Z',
+        updated_at: '2026-05-18T00:00:00.000Z'
+      },
+      {
+        id: 2,
+        name: 'Prof Liam Patel',
+        department: 'Information Systems',
+        bio: 'Teaches database design and enterprise systems.',
+        created_at: '2026-05-18T00:00:00.000Z',
+        updated_at: '2026-05-18T00:00:00.000Z'
+      }
+    ];
+    const mockConn = {
+      query: jest.fn().mockResolvedValue(mockTutors),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app).get('/api/tutors');
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: mockTutors });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      'SELECT id, name, department, bio, created_at, updated_at FROM Tutors ORDER BY name ASC'
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return 500 when tutors cannot be fetched', async () => {
+    const spy = jest.spyOn(pool, 'getConnection').mockRejectedValue(new Error('Connection failed'));
+
+    const res = await request(app).get('/api/tutors');
+
+    expect(res.statusCode).toEqual(500);
+    expect(res.body).toEqual({ status: 'error', message: 'Unable to fetch tutors' });
+
     spy.mockRestore();
   });
 });

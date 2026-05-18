@@ -26,6 +26,22 @@ app.get('/api/db-test', async (req, res) => {
   }
 });
 
+app.get('/api/tutors', async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const rows = await conn.query(
+      'SELECT id, name, department, bio, created_at, updated_at FROM Tutors ORDER BY name ASC'
+    );
+    res.json({ status: 'ok', data: rows });
+  } catch (err) {
+    console.error('Tutors query error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to fetch tutors' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 if (process.env.NODE_ENV !== 'test') {
   pool.getConnection()
     .then(conn => {
