@@ -402,7 +402,7 @@ watch(
               <span v-if="updating" class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
               {{ updating ? 'Saving' : 'Save changes' }}
             </button>
-            <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="updating" @click="cancelEditing">
+            <button class="btn btn-directory-action-secondary btn-sm" type="button" :disabled="updating" @click="cancelEditing">
               Cancel
             </button>
           </div>

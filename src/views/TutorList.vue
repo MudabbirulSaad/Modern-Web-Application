@@ -206,7 +206,7 @@ const toggleFavorite = async (tutor) => {
 
         <div class="col-12 col-md-6 col-lg-2">
           <button
-            class="btn btn-outline-secondary w-100"
+            class="btn btn-directory-action-secondary w-100"
             type="button"
             :disabled="!hasActiveFilters"
             @click="clearFilters"

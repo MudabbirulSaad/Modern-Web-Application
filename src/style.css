@@ -55,6 +55,49 @@ h1, h2, h3, h4, h5, h6 {
   border-radius: 1rem !important;
 }
 
+/* Brand-aligned form, menu, and pagination states */
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--swinburne-punch);
+  box-shadow: 0 0 0 0.25rem var(--swinburne-focus-ring);
+}
+
+.form-check-input:checked {
+  background-color: var(--swinburne-punch);
+  border-color: var(--swinburne-punch);
+}
+
+.form-check-input:focus {
+  border-color: var(--swinburne-punch);
+  box-shadow: 0 0 0 0.25rem var(--swinburne-focus-ring);
+}
+
+.dropdown-item.active,
+.dropdown-item:active {
+  color: var(--swinburne-white);
+  background-color: var(--swinburne-punch);
+}
+
+.page-link {
+  color: var(--swinburne-punch);
+}
+
+.page-link:hover,
+.page-link:focus {
+  color: var(--swinburne-red-berry);
+}
+
+.page-link:focus {
+  box-shadow: 0 0 0 0.25rem var(--swinburne-focus-ring);
+}
+
+.active > .page-link,
+.page-link.active {
+  color: var(--swinburne-white);
+  background-color: var(--swinburne-punch);
+  border-color: var(--swinburne-punch);
+}
+
 /* Brand-aligned Bootstrap button states */
 .btn-primary {
   --bs-btn-color: var(--swinburne-white);
@@ -257,6 +300,33 @@ h1, h2, h3, h4, h5, h6 {
 
 [data-bs-theme="dark"] .btn-favorite-saved {
   --bs-btn-focus-shadow-rgb: 254, 206, 0;
+}
+
+[data-bs-theme="dark"] .form-control:focus,
+[data-bs-theme="dark"] .form-select:focus,
+[data-bs-theme="dark"] .form-check-input:focus,
+[data-bs-theme="dark"] .page-link:focus {
+  box-shadow: 0 0 0 0.25rem var(--swinburne-focus-ring);
+}
+
+[data-bs-theme="dark"] .page-link {
+  color: #FF6B65;
+  background-color: var(--bs-surface-color);
+  border-color: #3A3A3A;
+}
+
+[data-bs-theme="dark"] .page-link:hover,
+[data-bs-theme="dark"] .page-link:focus {
+  color: var(--swinburne-black);
+  background-color: var(--swinburne-white);
+  border-color: var(--swinburne-white);
+}
+
+[data-bs-theme="dark"] .active > .page-link,
+[data-bs-theme="dark"] .page-link.active {
+  color: var(--swinburne-white);
+  background-color: var(--swinburne-punch);
+  border-color: #FF6B65;
 }
 
 /* Transition classes for page navigation */
