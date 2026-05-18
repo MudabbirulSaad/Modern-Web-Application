@@ -336,6 +336,22 @@ const validateFavoriteRequest = (req, res) => {
   return { userId: requestedUserId, entityType, entityId };
 };
 
+const validateDashboardUserRequest = (req, res) => {
+  const requestedUserId = Number(req.params.id);
+
+  if (!Number.isInteger(requestedUserId) || requestedUserId <= 0) {
+    res.status(400).json({ status: 'error', message: 'Valid user id is required' });
+    return null;
+  }
+
+  if (requestedUserId !== Number(req.user.id)) {
+    res.status(403).json({ status: 'error', message: 'Cannot access another user dashboard' });
+    return null;
+  }
+
+  return requestedUserId;
+};
+
 const selectReviewById = async (conn, reviewId, viewerId = null) => {
   const hasViewer = Number.isInteger(Number(viewerId)) && Number(viewerId) > 0;
   const upvoteSelect = hasViewer
@@ -721,6 +737,120 @@ app.post('/api/reviews/:id/upvote', requireStudent, async (req, res) => {
 
     console.error('Review upvote error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to update review upvote' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/users/:id/reviews', requireStudent, async (req, res) => {
+  const userId = validateDashboardUserRequest(req, res);
+
+  if (!userId) {
+    return;
+  }
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const rows = await conn.query(
+      `
+      SELECT
+        r.id,
+        r.user_id,
+        u.username,
+        r.entity_type,
+        r.entity_id,
+        CASE
+          WHEN r.entity_type = "course" THEN c.title
+          ELSE t.name
+        END AS entity_title,
+        CASE
+          WHEN r.entity_type = "course" THEN c.department
+          ELSE t.department
+        END AS entity_department,
+        r.rating,
+        r.comment,
+        r.upvotes,
+        r.created_at
+      FROM Reviews r
+      INNER JOIN Users u ON u.id = r.user_id
+      LEFT JOIN Courses c ON r.entity_type = "course" AND c.id = r.entity_id
+      LEFT JOIN Tutors t ON r.entity_type = "tutor" AND t.id = r.entity_id
+      WHERE r.user_id = ?
+      ORDER BY r.created_at DESC
+      `,
+      [userId]
+    );
+
+    res.json({ status: 'ok', data: rows });
+  } catch (err) {
+    console.error('User review history query error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to fetch review history' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/users/:id/favorites', requireStudent, async (req, res) => {
+  const userId = validateDashboardUserRequest(req, res);
+
+  if (!userId) {
+    return;
+  }
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const tutorRows = await conn.query(
+      `
+      SELECT
+        t.id,
+        t.name,
+        t.department,
+        t.bio,
+        t.created_at,
+        t.updated_at,
+        1 AS has_favorite
+      FROM Favorites f
+      INNER JOIN Tutors t ON t.id = f.entity_id
+      WHERE f.user_id = ? AND f.entity_type = "tutor"
+      ORDER BY t.name ASC
+      `,
+      [userId]
+    );
+    const courseRows = await conn.query(
+      `
+      SELECT
+        c.id,
+        c.title,
+        c.department,
+        c.description,
+        c.created_at,
+        c.updated_at,
+        COALESCE(GROUP_CONCAT(t.id ORDER BY t.name SEPARATOR ','), '') AS tutor_ids,
+        COALESCE(GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ', '), '') AS tutor_names,
+        1 AS has_favorite
+      FROM Favorites f
+      INNER JOIN Courses c ON c.id = f.entity_id
+      LEFT JOIN Course_Tutors ct ON ct.course_id = c.id
+      LEFT JOIN Tutors t ON t.id = ct.tutor_id
+      WHERE f.user_id = ? AND f.entity_type = "course"
+      GROUP BY c.id, c.title, c.department, c.description, c.created_at, c.updated_at
+      ORDER BY c.title ASC
+      `,
+      [userId]
+    );
+
+    res.json({
+      status: 'ok',
+      data: {
+        tutors: tutorRows.map(normalizeFavoriteFields),
+        courses: courseRows.map(normalizeFavoriteFields)
+      }
+    });
+  } catch (err) {
+    console.error('User favorites query error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to fetch favorites' });
   } finally {
     if (conn) conn.release();
   }
