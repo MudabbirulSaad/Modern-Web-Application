@@ -151,6 +151,189 @@ describe('GET /api/tutors/:id', () => {
   });
 });
 
+describe('Protected tutor management endpoints', () => {
+  const adminCookie = () => {
+    const token = jwt.sign(
+      { id: 1, role: 'admin' },
+      process.env.JWT_SECRET || 'development-jwt-secret',
+      { expiresIn: '7d' }
+    );
+    return [`auth_token=${token}`];
+  };
+
+  const studentCookie = () => {
+    const token = jwt.sign(
+      { id: 2, role: 'student' },
+      process.env.JWT_SECRET || 'development-jwt-secret',
+      { expiresIn: '7d' }
+    );
+    return [`auth_token=${token}`];
+  };
+
+  it('should create a tutor when the requester is an admin', async () => {
+    const createdTutor = {
+      id: 4,
+      name: 'Dr Nora Banks',
+      department: 'Computer Science',
+      bio: 'Teaches client-side engineering and accessibility.',
+      created_at: '2026-05-18T00:00:00.000Z',
+      updated_at: '2026-05-18T00:00:00.000Z'
+    };
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce({ insertId: 4 })
+        .mockResolvedValueOnce([createdTutor]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/tutors')
+      .set('Cookie', adminCookie())
+      .send({
+        name: ' Dr Nora Banks ',
+        department: ' Computer Science ',
+        bio: ' Teaches client-side engineering and accessibility. '
+      });
+
+    expect(res.statusCode).toEqual(201);
+    expect(res.body).toEqual({ status: 'ok', data: createdTutor });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      'INSERT INTO Tutors (name, department, bio) VALUES (?, ?, ?)',
+      ['Dr Nora Banks', 'Computer Science', 'Teaches client-side engineering and accessibility.']
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      'SELECT id, name, department, bio, created_at, updated_at FROM Tutors WHERE id = ? LIMIT 1',
+      [4]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should reject tutor creation when the requester is not an admin', async () => {
+    const res = await request(app)
+      .post('/api/tutors')
+      .set('Cookie', studentCookie())
+      .send({
+        name: 'Dr Nora Banks',
+        department: 'Computer Science',
+        bio: 'Teaches client-side engineering and accessibility.'
+      });
+
+    expect(res.statusCode).toEqual(403);
+    expect(res.body).toEqual({ status: 'error', message: 'Admin access required' });
+  });
+
+  it('should reject protected tutor changes without a valid token', async () => {
+    const res = await request(app)
+      .delete('/api/tutors/4')
+      .set('Cookie', ['auth_token=invalid-token']);
+
+    expect(res.statusCode).toEqual(401);
+    expect(res.body).toEqual({ status: 'error', message: 'Authentication required' });
+  });
+
+  it('should update a tutor when the requester is an admin', async () => {
+    const updatedTutor = {
+      id: 4,
+      name: 'Dr Nora Banks',
+      department: 'Software Engineering',
+      bio: 'Leads frontend architecture and accessibility studios.',
+      created_at: '2026-05-18T00:00:00.000Z',
+      updated_at: '2026-05-18T00:00:00.000Z'
+    };
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce([updatedTutor]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/tutors/4')
+      .set('Cookie', adminCookie())
+      .send({
+        name: 'Dr Nora Banks',
+        department: 'Software Engineering',
+        bio: 'Leads frontend architecture and accessibility studios.'
+      });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: updatedTutor });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      'UPDATE Tutors SET name = ?, department = ?, bio = ? WHERE id = ?',
+      ['Dr Nora Banks', 'Software Engineering', 'Leads frontend architecture and accessibility studios.', '4']
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return 404 when updating a missing tutor', async () => {
+    const mockConn = {
+      query: jest.fn().mockResolvedValue({ affectedRows: 0 }),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/tutors/999')
+      .set('Cookie', adminCookie())
+      .send({
+        name: 'Missing Tutor',
+        department: 'Computer Science',
+        bio: 'No profile.'
+      });
+
+    expect(res.statusCode).toEqual(404);
+    expect(res.body).toEqual({ status: 'error', message: 'Tutor not found' });
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should delete a tutor when the requester is an admin', async () => {
+    const mockConn = {
+      query: jest.fn().mockResolvedValue({ affectedRows: 1 }),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .delete('/api/tutors/4')
+      .set('Cookie', adminCookie());
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', message: 'Tutor deleted' });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      'DELETE FROM Tutors WHERE id = ?',
+      ['4']
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return 400 when tutor fields are missing', async () => {
+    const res = await request(app)
+      .post('/api/tutors')
+      .set('Cookie', adminCookie())
+      .send({
+        name: '',
+        department: 'Computer Science',
+        bio: 'No name.'
+      });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'Name, department, and bio are required' });
+  });
+});
+
 describe('GET /api/courses', () => {
   it('should return the list of courses with linked tutors from the database', async () => {
     const mockCourses = [

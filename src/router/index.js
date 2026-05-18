@@ -6,6 +6,8 @@ import TutorList from '../views/TutorList.vue'
 import TutorDetail from '../views/TutorDetail.vue'
 import Register from '../views/Register.vue'
 import Login from '../views/Login.vue'
+import AdminDashboard from '../views/AdminDashboard.vue'
+import { useUserStore } from '../store/userStore'
 
 const routes = [
   {
@@ -42,12 +44,38 @@ const routes = [
     path: '/login',
     name: 'login',
     component: Login
+  },
+  {
+    path: '/admin',
+    name: 'admin-dashboard',
+    component: AdminDashboard,
+    meta: {
+      requiresAdmin: true
+    }
   }
 ]
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes
+})
+
+router.beforeEach((to) => {
+  if (!to.meta.requiresAdmin) {
+    return true
+  }
+
+  const userStore = useUserStore()
+
+  if (!userStore.isAuthenticated) {
+    return { name: 'login' }
+  }
+
+  if (!userStore.isAdmin) {
+    return { name: 'home' }
+  }
+
+  return true
 })
 
 export default router
