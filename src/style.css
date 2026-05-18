@@ -1,4 +1,55 @@
-/* Reset or base styles if needed. Bootstrap is used for most styling. */
+:root {
+  /* Brand Colors */
+  --swinburne-punch: #DC2E27;
+  --swinburne-punch-rgb: 220, 46, 39;
+  --swinburne-black: #000000;
+  --swinburne-white: #FFFFFF;
+  --swinburne-supernova: #FECE00;
+  --swinburne-red-berry: #900000;
+
+  /* Bootstrap Overrides */
+  --bs-primary: var(--swinburne-punch);
+  --bs-primary-rgb: var(--swinburne-punch-rgb);
+  --bs-link-color: var(--swinburne-punch);
+  --bs-link-hover-color: var(--swinburne-red-berry);
+}
+
+/* Typography */
 body {
+  font-family: 'Open Sans', 'Arial', sans-serif;
+  background-color: var(--bs-body-bg);
+  color: var(--bs-body-color);
   min-height: 100vh;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-weight: 700;
+}
+
+/* Theme specific overrides */
+[data-bs-theme="light"] {
+  --bs-body-bg: #F8F9FA;
+}
+
+[data-bs-theme="dark"] {
+  --bs-body-bg: #121212;
+  --bs-surface-color: #1E1E1E;
+}
+
+/* Custom UI Components Base Styling */
+.rounded-4 {
+  border-radius: 1rem !important;
+}
+
+/* Transition classes for page navigation */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
 }

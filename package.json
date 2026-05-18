@@ -1,8 +1,8 @@
 {
-  "name": "modern-web-application",
+  "name": "swindirectory",
   "private": true,
   "version": "0.1.0",
-  "description": "A modern web application built with Vue and Vite.",
+  "description": "A Swinburne-inspired university course and tutor directory.",
   "contributors": [
     "Mudabbirul Saad"
   ],
