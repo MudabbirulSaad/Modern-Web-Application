@@ -44,6 +44,59 @@ const readTutorPayload = (body) => ({
   bio: String(body.bio || '').trim()
 });
 
+const readCoursePayload = (body) => ({
+  title: String(body.title || '').trim(),
+  department: String(body.department || '').trim(),
+  description: String(body.description || '').trim(),
+  tutorIds: [...new Set(
+    (Array.isArray(body.tutorIds) ? body.tutorIds : [])
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0)
+  )]
+});
+
+const selectCourseById = async (conn, courseId) => {
+  const courseRows = await conn.query(
+    'SELECT id, title, department, description, created_at, updated_at FROM Courses WHERE id = ? LIMIT 1',
+    [courseId]
+  );
+
+  if (courseRows.length === 0) {
+    return null;
+  }
+
+  const tutorRows = await conn.query(
+    `
+      SELECT
+        t.id,
+        t.name,
+        t.department,
+        t.bio
+      FROM Course_Tutors ct
+      INNER JOIN Tutors t ON t.id = ct.tutor_id
+      WHERE ct.course_id = ?
+      ORDER BY t.name ASC
+      `,
+    [courseId]
+  );
+
+  return { ...courseRows[0], tutors: tutorRows };
+};
+
+const insertCourseTutors = async (conn, courseId, tutorIds) => {
+  if (tutorIds.length === 0) {
+    return;
+  }
+
+  const placeholders = tutorIds.map(() => '(?, ?)').join(', ');
+  const values = tutorIds.flatMap((tutorId) => [courseId, tutorId]);
+
+  await conn.query(
+    `INSERT INTO Course_Tutors (course_id, tutor_id) VALUES ${placeholders}`,
+    values
+  );
+};
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
@@ -304,6 +357,7 @@ app.get('/api/courses', async (req, res) => {
         c.description,
         c.created_at,
         c.updated_at,
+        COALESCE(GROUP_CONCAT(t.id ORDER BY t.name SEPARATOR ','), '') AS tutor_ids,
         COALESCE(GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ', '), '') AS tutor_names
       FROM Courses c
       LEFT JOIN Course_Tutors ct ON ct.course_id = c.id
@@ -324,35 +378,113 @@ app.get('/api/courses/:id', async (req, res) => {
   let conn;
   try {
     conn = await pool.getConnection();
-    const courseRows = await conn.query(
-      'SELECT id, title, department, description, created_at, updated_at FROM Courses WHERE id = ? LIMIT 1',
-      [req.params.id]
-    );
+    const course = await selectCourseById(conn, req.params.id);
 
-    if (courseRows.length === 0) {
+    if (!course) {
       res.status(404).json({ status: 'error', message: 'Course not found' });
       return;
     }
 
-    const tutorRows = await conn.query(
-      `
-      SELECT
-        t.id,
-        t.name,
-        t.department,
-        t.bio
-      FROM Course_Tutors ct
-      INNER JOIN Tutors t ON t.id = ct.tutor_id
-      WHERE ct.course_id = ?
-      ORDER BY t.name ASC
-      `,
-      [req.params.id]
-    );
-
-    res.json({ status: 'ok', data: { ...courseRows[0], tutors: tutorRows } });
+    res.json({ status: 'ok', data: course });
   } catch (err) {
     console.error('Course detail query error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to fetch course' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/courses', requireAdmin, async (req, res) => {
+  const { title, department, description, tutorIds } = readCoursePayload(req.body);
+
+  if (!title || !department || !description) {
+    res.status(400).json({ status: 'error', message: 'Title, department, and description are required' });
+    return;
+  }
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    const result = await conn.query(
+      'INSERT INTO Courses (title, department, description) VALUES (?, ?, ?)',
+      [title, department, description]
+    );
+    const courseId = Number(result.insertId);
+
+    await insertCourseTutors(conn, courseId, tutorIds);
+    const course = await selectCourseById(conn, courseId);
+    await conn.commit();
+
+    res.status(201).json({ status: 'ok', data: course });
+  } catch (err) {
+    if (conn) await conn.rollback();
+    console.error('Course create error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to create course' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.put('/api/courses/:id', requireAdmin, async (req, res) => {
+  const { title, department, description, tutorIds } = readCoursePayload(req.body);
+
+  if (!title || !department || !description) {
+    res.status(400).json({ status: 'error', message: 'Title, department, and description are required' });
+    return;
+  }
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    const result = await conn.query(
+      'UPDATE Courses SET title = ?, department = ?, description = ? WHERE id = ?',
+      [title, department, description, req.params.id]
+    );
+
+    if (Number(result.affectedRows || 0) === 0) {
+      await conn.rollback();
+      res.status(404).json({ status: 'error', message: 'Course not found' });
+      return;
+    }
+
+    await conn.query(
+      'DELETE FROM Course_Tutors WHERE course_id = ?',
+      [req.params.id]
+    );
+    await insertCourseTutors(conn, req.params.id, tutorIds);
+    const course = await selectCourseById(conn, req.params.id);
+    await conn.commit();
+
+    res.json({ status: 'ok', data: course });
+  } catch (err) {
+    if (conn) await conn.rollback();
+    console.error('Course update error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to update course' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.delete('/api/courses/:id', requireAdmin, async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const result = await conn.query(
+      'DELETE FROM Courses WHERE id = ?',
+      [req.params.id]
+    );
+
+    if (Number(result.affectedRows || 0) === 0) {
+      res.status(404).json({ status: 'error', message: 'Course not found' });
+      return;
+    }
+
+    res.json({ status: 'ok', message: 'Course deleted' });
+  } catch (err) {
+    console.error('Course delete error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to delete course' });
   } finally {
     if (conn) conn.release();
   }
