@@ -19,7 +19,13 @@ const reviews = ref([])
 const loading = ref(false)
 const error = ref('')
 const submitError = ref('')
+const actionError = ref('')
 const submitting = ref(false)
+const updating = ref(false)
+const deletingId = ref(null)
+const editingReviewId = ref(null)
+const editRating = ref(5)
+const editComment = ref('')
 const rating = ref(5)
 const comment = ref('')
 
@@ -27,6 +33,7 @@ const hasReviews = computed(() => reviews.value.length > 0)
 const canReview = computed(() => userStore.isStudent)
 const entityLabel = computed(() => props.entityType === 'course' ? 'course' : 'tutor')
 const reviewLimitText = computed(() => canReview.value ? 'All reviews' : 'Top reviews')
+const isReviewAuthor = (review) => userStore.userId && Number(review.user_id) === Number(userStore.userId)
 
 const fetchReviews = async () => {
   loading.value = true
@@ -52,6 +59,19 @@ const fetchReviews = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const startEditing = (review) => {
+  actionError.value = ''
+  editingReviewId.value = review.id
+  editRating.value = review.rating
+  editComment.value = review.comment
+}
+
+const cancelEditing = () => {
+  editingReviewId.value = null
+  editRating.value = 5
+  editComment.value = ''
 }
 
 const submitReview = async () => {
@@ -85,6 +105,63 @@ const submitReview = async () => {
     submitError.value = err.message || 'Review could not be submitted. Please try again.'
   } finally {
     submitting.value = false
+  }
+}
+
+const updateReview = async (review) => {
+  actionError.value = ''
+  updating.value = true
+
+  try {
+    const response = await fetch(`/api/reviews/${review.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        rating: Number(editRating.value),
+        comment: editComment.value
+      })
+    })
+    const payload = await response.json()
+
+    if (!response.ok) {
+      throw new Error(payload.message || 'Unable to update review')
+    }
+
+    cancelEditing()
+    await fetchReviews()
+  } catch (err) {
+    actionError.value = err.message || 'Review could not be updated. Please try again.'
+  } finally {
+    updating.value = false
+  }
+}
+
+const deleteReview = async (review) => {
+  actionError.value = ''
+  deletingId.value = review.id
+
+  try {
+    const response = await fetch(`/api/reviews/${review.id}`, {
+      method: 'DELETE',
+      credentials: 'include'
+    })
+    const payload = await response.json()
+
+    if (!response.ok) {
+      throw new Error(payload.message || 'Unable to delete review')
+    }
+
+    if (editingReviewId.value === review.id) {
+      cancelEditing()
+    }
+    await fetchReviews()
+  } catch (err) {
+    actionError.value = err.message || 'Review could not be deleted. Please try again.'
+  } finally {
+    deletingId.value = null
   }
 }
 
@@ -162,6 +239,10 @@ watch(
     </div>
 
     <div v-else class="vstack gap-3">
+      <div v-if="actionError" class="alert alert-danger mb-0" role="alert">
+        {{ actionError }}
+      </div>
+
       <BaseCard v-for="review in reviews" :key="review.id">
         <div class="d-flex flex-column flex-sm-row justify-content-between gap-2 mb-3">
           <div>
@@ -170,12 +251,81 @@ watch(
               {{ new Date(review.created_at).toLocaleDateString() }}
             </p>
           </div>
-          <div class="review-rating" :aria-label="`${review.rating} out of 5 stars`">
-            {{ '★'.repeat(review.rating) }}{{ '☆'.repeat(5 - review.rating) }}
+
+          <div class="d-flex flex-column align-items-start align-items-sm-end gap-2">
+            <div class="review-rating" :aria-label="`${review.rating} out of 5 stars`">
+              {{ '★'.repeat(review.rating) }}{{ '☆'.repeat(5 - review.rating) }}
+            </div>
+
+            <div v-if="isReviewAuthor(review)" class="btn-group btn-group-sm" aria-label="Review actions">
+              <button
+                class="btn btn-outline-primary"
+                type="button"
+                :disabled="updating || deletingId === review.id"
+                @click="startEditing(review)"
+              >
+                Edit
+              </button>
+              <button
+                class="btn btn-outline-danger"
+                type="button"
+                :disabled="updating || deletingId === review.id"
+                @click="deleteReview(review)"
+              >
+                <span
+                  v-if="deletingId === review.id"
+                  class="spinner-border spinner-border-sm me-1"
+                  aria-hidden="true"
+                ></span>
+                {{ deletingId === review.id ? 'Deleting' : 'Delete' }}
+              </button>
+            </div>
           </div>
         </div>
 
-        <p class="mb-3">{{ review.comment }}</p>
+        <form
+          v-if="editingReviewId === review.id"
+          class="vstack gap-3 mb-3"
+          @submit.prevent="updateReview(review)"
+        >
+          <div>
+            <label class="form-label" :for="`${entityType}-edit-review-rating-${review.id}`">Rating</label>
+            <select
+              :id="`${entityType}-edit-review-rating-${review.id}`"
+              v-model="editRating"
+              class="form-select"
+              required
+            >
+              <option v-for="value in 5" :key="value" :value="value">
+                {{ value }} star{{ value === 1 ? '' : 's' }}
+              </option>
+            </select>
+          </div>
+
+          <div>
+            <label class="form-label" :for="`${entityType}-edit-review-comment-${review.id}`">Comment</label>
+            <textarea
+              :id="`${entityType}-edit-review-comment-${review.id}`"
+              v-model="editComment"
+              class="form-control"
+              rows="4"
+              maxlength="1000"
+              required
+            ></textarea>
+          </div>
+
+          <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-primary btn-sm" type="submit" :disabled="updating || !editComment.trim()">
+              <span v-if="updating" class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
+              {{ updating ? 'Saving' : 'Save changes' }}
+            </button>
+            <button class="btn btn-outline-secondary btn-sm" type="button" :disabled="updating" @click="cancelEditing">
+              Cancel
+            </button>
+          </div>
+        </form>
+
+        <p v-else class="mb-3">{{ review.comment }}</p>
         <p class="text-body-secondary small mb-0">{{ review.upvotes }} upvotes</p>
       </BaseCard>
     </div>

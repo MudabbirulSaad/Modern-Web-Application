@@ -371,6 +371,75 @@ app.post('/api/reviews', requireStudent, async (req, res) => {
   }
 });
 
+app.put('/api/reviews/:id', requireStudent, async (req, res) => {
+  const reviewId = Number(req.params.id);
+  const rating = Number(req.body.rating);
+  const comment = sanitizeReviewComment(req.body.comment);
+
+  if (!Number.isInteger(reviewId) || reviewId <= 0) {
+    res.status(400).json({ status: 'error', message: 'Valid review id is required' });
+    return;
+  }
+
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5 || !comment) {
+    res.status(400).json({ status: 'error', message: 'Rating from 1 to 5 and comment are required' });
+    return;
+  }
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const result = await conn.query(
+      'UPDATE Reviews SET rating = ?, comment = ? WHERE id = ? AND user_id = ?',
+      [rating, comment, req.params.id, Number(req.user.id)]
+    );
+
+    if (Number(result.affectedRows || 0) === 0) {
+      res.status(404).json({ status: 'error', message: 'Review not found' });
+      return;
+    }
+
+    const review = await selectReviewById(conn, reviewId);
+
+    res.json({ status: 'ok', data: review });
+  } catch (err) {
+    console.error('Review update error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to update review' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.delete('/api/reviews/:id', requireStudent, async (req, res) => {
+  const reviewId = Number(req.params.id);
+
+  if (!Number.isInteger(reviewId) || reviewId <= 0) {
+    res.status(400).json({ status: 'error', message: 'Valid review id is required' });
+    return;
+  }
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const result = await conn.query(
+      'DELETE FROM Reviews WHERE id = ? AND user_id = ?',
+      [req.params.id, Number(req.user.id)]
+    );
+
+    if (Number(result.affectedRows || 0) === 0) {
+      res.status(404).json({ status: 'error', message: 'Review not found' });
+      return;
+    }
+
+    res.json({ status: 'ok', message: 'Review deleted' });
+  } catch (err) {
+    console.error('Review delete error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to delete review' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 app.get('/api/tutors', async (req, res) => {
   let conn;
   try {
