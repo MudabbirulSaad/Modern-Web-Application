@@ -112,6 +112,44 @@ const readPagination = (query) => {
 
 const readTotalCount = (rows) => Number(rows?.[0]?.total || 0);
 
+const readDirectorySort = (query) => {
+  const sort = String(query.sort || '').trim().toLowerCase();
+
+  if (['best-match', 'best_match', 'best'].includes(sort)) {
+    return 'best-match';
+  }
+
+  if (['recently-active', 'recently_active', 'recent'].includes(sort)) {
+    return 'recently-active';
+  }
+
+  return 'alphabetical';
+};
+
+const buildReviewStatsJoin = (entityType, entityAlias) => `
+      LEFT JOIN (
+        SELECT
+          entity_id,
+          AVG(rating) AS average_rating,
+          COUNT(*) AS review_count,
+          MAX(created_at) AS latest_review_at
+        FROM Reviews
+        WHERE entity_type = "${entityType}"
+        GROUP BY entity_id
+      ) review_stats ON review_stats.entity_id = ${entityAlias}.id`;
+
+const buildDirectoryOrderClause = (sort, entityAlias, labelField) => {
+  if (sort === 'best-match') {
+    return `ORDER BY (COALESCE(review_stats.average_rating, 0) * 2) + LOG10(COALESCE(review_stats.review_count, 0) + 1) DESC, COALESCE(review_stats.review_count, 0) DESC, ${entityAlias}.${labelField} ASC`;
+  }
+
+  if (sort === 'recently-active') {
+    return `ORDER BY GREATEST(${entityAlias}.updated_at, COALESCE(review_stats.latest_review_at, ${entityAlias}.updated_at)) DESC, ${entityAlias}.${labelField} ASC`;
+  }
+
+  return `ORDER BY ${entityAlias}.${labelField} ASC`;
+};
+
 const buildTutorFilters = ({ search, department }) => {
   const clauses = [];
   const params = [];
@@ -746,8 +784,12 @@ app.get('/api/tutors', async (req, res) => {
   const isStudent = viewer?.role === 'student';
   const { whereClause, params } = buildTutorFilters(readDirectoryFilters(req.query));
   const pagination = readPagination(req.query);
+  const sort = readDirectorySort(req.query);
   const paginationClause = pagination.isPaginated ? ' LIMIT ? OFFSET ?' : '';
   const paginationParams = pagination.isPaginated ? [pagination.limit, pagination.offset] : [];
+  const needsReviewStats = sort !== 'alphabetical';
+  const reviewStatsJoin = needsReviewStats ? buildReviewStatsJoin('tutor', 't') : '';
+  const orderClause = buildDirectoryOrderClause(sort, 't', 'name');
 
   let conn;
   try {
@@ -770,11 +812,31 @@ app.get('/api/tutors', async (req, res) => {
         CASE WHEN f.id IS NULL THEN 0 ELSE 1 END AS has_favorite
       FROM Tutors t
       LEFT JOIN Favorites f ON f.entity_type = "tutor" AND f.entity_id = t.id AND f.user_id = ?
+      ${reviewStatsJoin}
       ${whereClause}
-      ORDER BY t.name ASC
+      ${orderClause}
       ${paginationClause}
       `;
       rows = await conn.query(sql, [Number(viewer.id), ...params, ...paginationParams]);
+    } else if (needsReviewStats) {
+      const sql = `
+      SELECT
+        t.id,
+        t.name,
+        t.department,
+        t.bio,
+        t.created_at,
+        t.updated_at
+      FROM Tutors t
+      ${reviewStatsJoin}
+      ${whereClause}
+      ${orderClause}
+      ${paginationClause}
+      `;
+      const queryParams = [...params, ...paginationParams];
+      rows = queryParams.length > 0
+        ? await conn.query(sql, queryParams)
+        : await conn.query(sql);
     } else {
       const sql = `SELECT id, name, department, bio, created_at, updated_at FROM Tutors${whereClause} ORDER BY name ASC${paginationClause}`;
       const queryParams = [...params, ...paginationParams];
@@ -928,8 +990,15 @@ app.get('/api/courses', async (req, res) => {
   const isStudent = viewer?.role === 'student';
   const { whereClause, params } = buildCourseFilters(readDirectoryFilters(req.query));
   const pagination = readPagination(req.query);
+  const sort = readDirectorySort(req.query);
   const paginationClause = pagination.isPaginated ? ' LIMIT ? OFFSET ?' : '';
   const paginationParams = pagination.isPaginated ? [pagination.limit, pagination.offset] : [];
+  const needsReviewStats = sort !== 'alphabetical';
+  const reviewStatsJoin = needsReviewStats ? buildReviewStatsJoin('course', 'c') : '';
+  const orderClause = buildDirectoryOrderClause(sort, 'c', 'title');
+  const reviewStatsGroupFields = needsReviewStats
+    ? ', review_stats.average_rating, review_stats.review_count, review_stats.latest_review_at'
+    : '';
 
   let conn;
   try {
@@ -956,9 +1025,10 @@ app.get('/api/courses', async (req, res) => {
       LEFT JOIN Course_Tutors ct ON ct.course_id = c.id
       LEFT JOIN Tutors t ON t.id = ct.tutor_id
       LEFT JOIN Favorites f ON f.entity_type = "course" AND f.entity_id = c.id AND f.user_id = ?
+      ${reviewStatsJoin}
       ${whereClause}
-      GROUP BY c.id, c.title, c.department, c.description, c.created_at, c.updated_at, f.id
-      ORDER BY c.title ASC
+      GROUP BY c.id, c.title, c.department, c.description, c.created_at, c.updated_at, f.id${reviewStatsGroupFields}
+      ${orderClause}
       ${paginationClause}
     `;
       rows = await conn.query(sql, [Number(viewer.id), ...params, ...paginationParams]);
@@ -976,9 +1046,10 @@ app.get('/api/courses', async (req, res) => {
       FROM Courses c
       LEFT JOIN Course_Tutors ct ON ct.course_id = c.id
       LEFT JOIN Tutors t ON t.id = ct.tutor_id
+      ${reviewStatsJoin}
       ${whereClause}
-      GROUP BY c.id, c.title, c.department, c.description, c.created_at, c.updated_at
-      ORDER BY c.title ASC
+      GROUP BY c.id, c.title, c.department, c.description, c.created_at, c.updated_at${reviewStatsGroupFields}
+      ${orderClause}
       ${paginationClause}
     `;
       const queryParams = [...params, ...paginationParams];
