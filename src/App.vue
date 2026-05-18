@@ -7,9 +7,12 @@ import { useUserStore } from './store/userStore'
 const userStore = useUserStore()
 const router = useRouter()
 
-const logout = () => {
-  userStore.clearUser()
-  router.push({ name: 'home' })
+const logout = async () => {
+  try {
+    await userStore.logout()
+    router.push({ name: 'home' })
+  } catch {
+  }
 }
 
 onMounted(() => {

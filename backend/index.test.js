@@ -1130,6 +1130,87 @@ describe('POST /api/auth/login', () => {
   });
 });
 
+describe('GET /api/auth/session', () => {
+  const sessionCookie = () => {
+    const token = jwt.sign(
+      { id: 7, role: 'student' },
+      process.env.JWT_SECRET || 'development-jwt-secret',
+      { expiresIn: '7d' }
+    );
+    return [`auth_token=${token}`];
+  };
+
+  it('should restore the authenticated user from the auth cookie', async () => {
+    const mockUser = {
+      id: 7,
+      username: 'studentone',
+      email: 'student@example.edu',
+      role: 'student'
+    };
+    const mockConn = {
+      query: jest.fn().mockResolvedValue([mockUser]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/auth/session')
+      .set('Cookie', sessionCookie());
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: mockUser });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      'SELECT id, username, email, role FROM Users WHERE id = ? LIMIT 1',
+      [7]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return 401 when the auth cookie is missing', async () => {
+    const spy = jest.spyOn(pool, 'getConnection');
+
+    const res = await request(app).get('/api/auth/session');
+
+    expect(res.statusCode).toEqual(401);
+    expect(res.body).toEqual({ status: 'error', message: 'Authentication required' });
+    expect(spy).not.toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return 401 when the auth cookie is invalid', async () => {
+    const spy = jest.spyOn(pool, 'getConnection');
+
+    const res = await request(app)
+      .get('/api/auth/session')
+      .set('Cookie', ['auth_token=invalid-token']);
+
+    expect(res.statusCode).toEqual(401);
+    expect(res.body).toEqual({ status: 'error', message: 'Authentication required' });
+    expect(spy).not.toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+});
+
+describe('POST /api/auth/logout', () => {
+  it('should clear the auth cookie', async () => {
+    const res = await request(app).post('/api/auth/logout');
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok' });
+
+    const cookies = res.headers['set-cookie'];
+    expect(cookies).toBeDefined();
+    expect(cookies[0]).toContain('auth_token=');
+    expect(cookies[0]).toContain('Expires=Thu, 01 Jan 1970 00:00:00 GMT');
+    expect(cookies[0]).toContain('HttpOnly');
+    expect(cookies[0]).toContain('SameSite=Strict');
+  });
+});
+
 describe('Review endpoints', () => {
   const studentCookie = () => {
     const token = jwt.sign(
