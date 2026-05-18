@@ -42,6 +42,34 @@ app.get('/api/tutors', async (req, res) => {
   }
 });
 
+app.get('/api/courses', async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const rows = await conn.query(`
+      SELECT
+        c.id,
+        c.title,
+        c.department,
+        c.description,
+        c.created_at,
+        c.updated_at,
+        COALESCE(GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ', '), '') AS tutor_names
+      FROM Courses c
+      LEFT JOIN Course_Tutors ct ON ct.course_id = c.id
+      LEFT JOIN Tutors t ON t.id = ct.tutor_id
+      GROUP BY c.id, c.title, c.department, c.description, c.created_at, c.updated_at
+      ORDER BY c.title ASC
+    `);
+    res.json({ status: 'ok', data: rows });
+  } catch (err) {
+    console.error('Courses query error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to fetch courses' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 if (process.env.NODE_ENV !== 'test') {
   pool.getConnection()
     .then(conn => {
