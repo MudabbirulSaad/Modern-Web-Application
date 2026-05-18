@@ -67,17 +67,16 @@ onMounted(() => {
           </li>
         </ul>
         
-        <div class="d-flex align-items-center">
-          <div class="dropdown">
-            <button class="btn btn-link nav-link dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-              Theme
-            </button>
-            <ul class="dropdown-menu dropdown-menu-end shadow border-0 rounded-3">
-              <li><button class="dropdown-item" @click="userStore.setTheme('light')">Light</button></li>
-              <li><button class="dropdown-item" @click="userStore.setTheme('dark')">Dark</button></li>
-              <li><button class="dropdown-item" @click="userStore.setTheme('auto')">System</button></li>
-            </ul>
-          </div>
+        <div class="d-flex align-items-center mt-2 mt-lg-0">
+          <button
+            class="btn theme-toggle-btn"
+            type="button"
+            :aria-label="`Current theme is ${userStore.themeLabel}. Activate to switch to ${userStore.nextThemeLabel}.`"
+            :title="`Switch to ${userStore.nextThemeLabel} theme`"
+            @click="userStore.cycleTheme"
+          >
+            {{ userStore.themeLabel }}
+          </button>
         </div>
       </div>
     </div>
@@ -116,5 +115,25 @@ onMounted(() => {
 
 .nav-link:hover, .nav-link.active {
   color: var(--swinburne-punch) !important;
+}
+
+.theme-toggle-btn {
+  --bs-btn-color: var(--swinburne-white);
+  /* --bs-btn-border-color: var(--swinburne-punch); */
+  --bs-btn-bg: var(--swinburne-punch-opa);
+  --bs-btn-hover-color: var(--swinburne-white);
+  --bs-btn-hover-bg: var(--swinburne-punch);
+  --bs-btn-active-color: var(--swinburne-white);
+  --bs-btn-active-bg: var(--swinburne-red-berry);
+  --bs-btn-active-border-color: var(--swinburne-red-berry);
+  --bs-btn-focus-shadow-rgb: var(--swinburne-punch-rgb);
+  border-width: 0;
+  font-weight: 600;
+  line-height: 1.25;
+  padding: 0.375rem 0.75rem;
+}
+
+.theme-toggle-btn:focus-visible {
+  box-shadow: 0 0 0 0.25rem var(--swinburne-focus-ring);
 }
 </style>

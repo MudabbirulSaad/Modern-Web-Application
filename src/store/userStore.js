@@ -1,6 +1,12 @@
 import { defineStore } from 'pinia'
 
 let sessionRequest = null
+const themeModes = ['light', 'dark', 'auto']
+const themeLabels = {
+  light: 'Light',
+  dark: 'Dark',
+  auto: 'System'
+}
 
 export const useUserStore = defineStore('user', {
   state: () => ({
@@ -129,6 +135,11 @@ export const useUserStore = defineStore('user', {
       localStorage.setItem('theme', newTheme)
       this.applyTheme()
     },
+    cycleTheme() {
+      const currentThemeIndex = themeModes.indexOf(this.theme)
+      const nextTheme = themeModes[(currentThemeIndex + 1) % themeModes.length] || themeModes[0]
+      this.setTheme(nextTheme)
+    },
     applyTheme() {
       let activeTheme = this.theme
       if (this.theme === 'auto') {
@@ -140,6 +151,12 @@ export const useUserStore = defineStore('user', {
   getters: {
     isAuthenticated: (state) => state.loggedIn,
     isAdmin: (state) => state.loggedIn && state.role === 'admin',
-    isStudent: (state) => state.loggedIn && state.role === 'student'
+    isStudent: (state) => state.loggedIn && state.role === 'student',
+    themeLabel: (state) => themeLabels[state.theme] || themeLabels.auto,
+    nextThemeLabel: (state) => {
+      const currentThemeIndex = themeModes.indexOf(state.theme)
+      const nextTheme = themeModes[(currentThemeIndex + 1) % themeModes.length] || themeModes[0]
+      return themeLabels[nextTheme]
+    }
   }
 })
