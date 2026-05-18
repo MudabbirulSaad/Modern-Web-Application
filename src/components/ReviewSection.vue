@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import BaseCard from './common/BaseCard.vue'
+import { getRatingFromArrowKey, reviewStarOptions } from './reviewStars'
 import { useUserStore } from '../store/userStore'
 
 const props = defineProps({
@@ -37,6 +38,24 @@ const reviewLimitText = computed(() => canReview.value ? 'All reviews' : 'Top re
 const isReviewAuthor = (review) => userStore.userId && Number(review.user_id) === Number(userStore.userId)
 
 const upvoteLabel = (review) => `${review.upvotes} helpful vote${Number(review.upvotes) === 1 ? '' : 's'}`
+
+const updateNewRatingFromKey = (event) => {
+  const nextRating = getRatingFromArrowKey(event.key, rating.value)
+
+  if (nextRating !== Number(rating.value)) {
+    event.preventDefault()
+    rating.value = nextRating
+  }
+}
+
+const updateEditRatingFromKey = (event) => {
+  const nextRating = getRatingFromArrowKey(event.key, editRating.value)
+
+  if (nextRating !== Number(editRating.value)) {
+    event.preventDefault()
+    editRating.value = nextRating
+  }
+}
 
 const fetchReviews = async () => {
   loading.value = true
@@ -216,17 +235,33 @@ watch(
 
       <form class="vstack gap-3" @submit.prevent="submitReview">
         <div>
-          <label class="form-label" :for="`${entityType}-review-rating`">Rating</label>
-          <select
-            :id="`${entityType}-review-rating`"
-            v-model="rating"
-            class="form-select"
-            required
+          <p :id="`${entityType}-review-rating-label`" class="form-label mb-2">Rating</p>
+          <div
+            class="review-star-input"
+            role="radiogroup"
+            :aria-labelledby="`${entityType}-review-rating-label`"
           >
-            <option v-for="value in 5" :key="value" :value="value">
-              {{ value }} star{{ value === 1 ? '' : 's' }}
-            </option>
-          </select>
+            <template v-for="option in reviewStarOptions(rating)" :key="option.value">
+              <input
+                :id="`${entityType}-review-rating-${option.value}`"
+                v-model="rating"
+                class="btn-check"
+                type="radio"
+                :name="`${entityType}-review-rating`"
+                :value="option.value"
+                required
+                @keydown="updateNewRatingFromKey"
+              >
+              <label
+                class="review-star-button"
+                :class="{ 'is-filled': option.filled }"
+                :for="`${entityType}-review-rating-${option.value}`"
+              >
+                <span aria-hidden="true">★</span>
+                <span class="visually-hidden">{{ option.label }}</span>
+              </label>
+            </template>
+          </div>
         </div>
 
         <div>
@@ -246,7 +281,7 @@ watch(
         </div>
 
         <div>
-          <button class="btn btn-primary" type="submit" :disabled="submitting || !comment.trim()">
+          <button class="btn btn-directory-action" type="submit" :disabled="submitting || !comment.trim()">
             <span v-if="submitting" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
             {{ submitting ? 'Submitting' : 'Submit review' }}
           </button>
@@ -291,7 +326,7 @@ watch(
 
             <div v-if="isReviewAuthor(review)" class="btn-group btn-group-sm" aria-label="Review actions">
               <button
-                class="btn btn-outline-primary"
+                class="btn btn-directory-action-secondary"
                 type="button"
                 :disabled="updating || deletingId === review.id"
                 @click="startEditing(review)"
@@ -299,7 +334,7 @@ watch(
                 Edit
               </button>
               <button
-                class="btn btn-outline-danger"
+                class="btn btn-directory-action-danger"
                 type="button"
                 :disabled="updating || deletingId === review.id"
                 @click="deleteReview(review)"
@@ -321,17 +356,33 @@ watch(
           @submit.prevent="updateReview(review)"
         >
           <div>
-            <label class="form-label" :for="`${entityType}-edit-review-rating-${review.id}`">Rating</label>
-            <select
-              :id="`${entityType}-edit-review-rating-${review.id}`"
-              v-model="editRating"
-              class="form-select"
-              required
+            <p :id="`${entityType}-edit-review-rating-label-${review.id}`" class="form-label mb-2">Rating</p>
+            <div
+              class="review-star-input"
+              role="radiogroup"
+              :aria-labelledby="`${entityType}-edit-review-rating-label-${review.id}`"
             >
-              <option v-for="value in 5" :key="value" :value="value">
-                {{ value }} star{{ value === 1 ? '' : 's' }}
-              </option>
-            </select>
+              <template v-for="option in reviewStarOptions(editRating)" :key="option.value">
+                <input
+                  :id="`${entityType}-edit-review-rating-${review.id}-${option.value}`"
+                  v-model="editRating"
+                  class="btn-check"
+                  type="radio"
+                  :name="`${entityType}-edit-review-rating-${review.id}`"
+                  :value="option.value"
+                  required
+                  @keydown="updateEditRatingFromKey"
+                >
+                <label
+                  class="review-star-button"
+                  :class="{ 'is-filled': option.filled }"
+                  :for="`${entityType}-edit-review-rating-${review.id}-${option.value}`"
+                >
+                  <span aria-hidden="true">★</span>
+                  <span class="visually-hidden">{{ option.label }}</span>
+                </label>
+              </template>
+            </div>
           </div>
 
           <div>
@@ -347,7 +398,7 @@ watch(
           </div>
 
           <div class="d-flex flex-wrap gap-2">
-            <button class="btn btn-primary btn-sm" type="submit" :disabled="updating || !editComment.trim()">
+            <button class="btn btn-directory-action btn-sm" type="submit" :disabled="updating || !editComment.trim()">
               <span v-if="updating" class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>
               {{ updating ? 'Saving' : 'Save changes' }}
             </button>
@@ -362,7 +413,7 @@ watch(
         <div class="d-flex align-items-center gap-2">
           <button
             class="btn btn-sm"
-            :class="review.has_upvoted ? 'btn-primary' : 'btn-outline-primary'"
+            :class="review.has_upvoted ? 'btn-directory-action' : 'btn-directory-action-secondary'"
             type="button"
             :disabled="!canReview || upvotingId === review.id"
             :aria-pressed="review.has_upvoted ? 'true' : 'false'"
@@ -388,10 +439,41 @@ watch(
 }
 
 .review-rating {
-  color: var(--swinburne-punch);
+  color: var(--swinburne-supernova);
   font-weight: 700;
   letter-spacing: 0;
   white-space: nowrap;
+}
+
+.review-star-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.review-star-button {
+  color: var(--bs-secondary-color);
+  cursor: pointer;
+  font-size: 1.8rem;
+  line-height: 1;
+  padding: 0.125rem;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.review-star-button:hover,
+.review-star-button.is-filled {
+  color: var(--swinburne-supernova);
+}
+
+.btn-check:focus + .review-star-button {
+  border-radius: 0.25rem;
+  box-shadow: 0 0 0 0.25rem var(--swinburne-focus-ring);
+  outline: 0;
+}
+
+.btn-check:checked + .review-star-button {
+  color: var(--swinburne-supernova);
+  transform: translateY(-1px);
 }
 
 .text-bg-light {
