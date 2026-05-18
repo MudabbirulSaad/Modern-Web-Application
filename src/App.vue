@@ -34,6 +34,9 @@ onMounted(() => {
           <li class="nav-item">
             <RouterLink class="nav-link px-3" active-class="active" to="/">Home</RouterLink>
           </li>
+          <li class="nav-item">
+            <RouterLink class="nav-link px-3" active-class="active" to="/tutors">Tutors</RouterLink>
+          </li>
         </ul>
         
         <div class="d-flex align-items-center">
