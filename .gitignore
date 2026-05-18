@@ -16,6 +16,9 @@ docs/
 issues/
 jit/
 
+.env
+CONTEXT.md
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
