@@ -1,9 +1,16 @@
 <script setup>
 import { onMounted } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useUserStore } from './store/userStore'
 
 const userStore = useUserStore()
+const router = useRouter()
+
+const logout = () => {
+  userStore.clearUser()
+  router.push({ name: 'home' })
+}
 
 onMounted(() => {
   userStore.applyTheme()
@@ -40,8 +47,14 @@ onMounted(() => {
           <li class="nav-item">
             <RouterLink class="nav-link px-3" active-class="active" to="/tutors">Tutors</RouterLink>
           </li>
-          <li class="nav-item">
+          <li v-if="!userStore.isAuthenticated" class="nav-item">
             <RouterLink class="nav-link px-3" active-class="active" to="/register">Register</RouterLink>
+          </li>
+          <li v-if="!userStore.isAuthenticated" class="nav-item">
+            <RouterLink class="nav-link px-3" active-class="active" to="/login">Login</RouterLink>
+          </li>
+          <li v-else class="nav-item">
+            <button class="btn btn-link nav-link px-3" type="button" @click="logout">Logout</button>
           </li>
         </ul>
         

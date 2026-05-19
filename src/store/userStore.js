@@ -3,6 +3,9 @@ import { defineStore } from 'pinia'
 export const useUserStore = defineStore('user', {
   state: () => ({
     user: null,
+    userId: null,
+    role: null,
+    loggedIn: false,
     loading: false,
     error: null,
     theme: localStorage.getItem('theme') || 'auto'
@@ -10,9 +13,44 @@ export const useUserStore = defineStore('user', {
   actions: {
     setUser(userData) {
       this.user = userData
+      this.userId = userData?.id || null
+      this.role = userData?.role || null
+      this.loggedIn = !!userData
     },
     clearUser() {
       this.user = null
+      this.userId = null
+      this.role = null
+      this.loggedIn = false
+    },
+    async login(credentials) {
+      this.loading = true
+      this.error = null
+
+      try {
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          credentials: 'include',
+          body: JSON.stringify(credentials)
+        })
+        const payload = await response.json()
+
+        if (!response.ok) {
+          throw new Error(payload.message || 'Unable to log in')
+        }
+
+        this.setUser(payload.data)
+        return payload.data
+      } catch (err) {
+        this.clearUser()
+        this.error = err.message || 'Login failed. Please try again.'
+        throw err
+      } finally {
+        this.loading = false
+      }
     },
     setTheme(newTheme) {
       this.theme = newTheme
@@ -28,6 +66,6 @@ export const useUserStore = defineStore('user', {
     }
   },
   getters: {
-    isAuthenticated: (state) => !!state.user
+    isAuthenticated: (state) => state.loggedIn
   }
 })

@@ -1,14 +1,19 @@
 import express from 'express';
 import cors from 'cors';
 import bcrypt from 'bcrypt';
+import cookieParser from 'cookie-parser';
+import jwt from 'jsonwebtoken';
 import pool from './db.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const SALT_ROUNDS = 12;
+const JWT_SECRET = process.env.JWT_SECRET || 'development-jwt-secret';
+const AUTH_COOKIE_NAME = 'auth_token';
 
 app.use(cors());
 app.use(express.json());
+app.use(cookieParser());
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
@@ -67,6 +72,66 @@ app.post('/api/auth/register', async (req, res) => {
 
     console.error('Registration error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to register user' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const password = String(req.body.password || '');
+
+  if (!email || !password) {
+    res.status(400).json({ status: 'error', message: 'Email and password are required' });
+    return;
+  }
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const rows = await conn.query(
+      'SELECT id, username, email, password_hash, role FROM Users WHERE email = ? LIMIT 1',
+      [email]
+    );
+    const user = rows[0];
+
+    if (!user) {
+      res.status(401).json({ status: 'error', message: 'Invalid email or password' });
+      return;
+    }
+
+    const passwordMatches = await bcrypt.compare(password, user.password_hash);
+
+    if (!passwordMatches) {
+      res.status(401).json({ status: 'error', message: 'Invalid email or password' });
+      return;
+    }
+
+    const userData = {
+      id: Number(user.id),
+      username: user.username,
+      email: user.email,
+      role: user.role
+    };
+    const token = jwt.sign(
+      {
+        id: userData.id,
+        role: userData.role
+      },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.cookie(AUTH_COOKIE_NAME, token, {
+      httpOnly: true,
+      sameSite: 'strict',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+    res.json({ status: 'ok', data: userData });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to log in' });
   } finally {
     if (conn) conn.release();
   }
