@@ -38,6 +38,37 @@ const requireAdmin = (req, res, next) => {
   }
 };
 
+const decodeAuthCookie = (req) => {
+  const token = req.cookies?.[AUTH_COOKIE_NAME];
+
+  if (!token) {
+    return null;
+  }
+
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch (err) {
+    return null;
+  }
+};
+
+const requireStudent = (req, res, next) => {
+  const decoded = decodeAuthCookie(req);
+
+  if (!decoded) {
+    res.status(401).json({ status: 'error', message: 'Authentication required' });
+    return;
+  }
+
+  if (decoded.role !== 'student') {
+    res.status(403).json({ status: 'error', message: 'Student access required' });
+    return;
+  }
+
+  req.user = decoded;
+  next();
+};
+
 const readTutorPayload = (body) => ({
   name: String(body.name || '').trim(),
   department: String(body.department || '').trim(),
@@ -95,6 +126,45 @@ const insertCourseTutors = async (conn, courseId, tutorIds) => {
     `INSERT INTO Course_Tutors (course_id, tutor_id) VALUES ${placeholders}`,
     values
   );
+};
+
+const sanitizeReviewComment = (comment) => String(comment || '')
+  .trim()
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
+const readReviewPayload = (body) => ({
+  entityType: String(body.entity_type || '').trim().toLowerCase(),
+  entityId: Number(body.entity_id),
+  rating: Number(body.rating),
+  comment: sanitizeReviewComment(body.comment)
+});
+
+const selectReviewById = async (conn, reviewId) => {
+  const rows = await conn.query(
+    `
+      SELECT
+        r.id,
+        r.user_id,
+        u.username,
+        r.entity_type,
+        r.entity_id,
+        r.rating,
+        r.comment,
+        r.upvotes,
+        r.created_at
+      FROM Reviews r
+      INNER JOIN Users u ON u.id = r.user_id
+      WHERE r.id = ?
+      LIMIT 1
+      `,
+    [reviewId]
+  );
+
+  return rows[0] || null;
 };
 
 app.get('/api/health', (req, res) => {
@@ -214,6 +284,88 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (err) {
     console.error('Login error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to log in' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/reviews', async (req, res) => {
+  const entityType = String(req.query.entity_type || '').trim().toLowerCase();
+  const entityId = Number(req.query.entity_id);
+
+  if (!['tutor', 'course'].includes(entityType) || !Number.isInteger(entityId) || entityId <= 0) {
+    res.status(400).json({ status: 'error', message: 'Valid entity_type and entity_id are required' });
+    return;
+  }
+
+  const viewer = decodeAuthCookie(req);
+  const isStudent = viewer?.role === 'student';
+  const params = [entityType, entityId];
+  const limitClause = isStudent ? '' : 'LIMIT ?';
+
+  if (!isStudent) {
+    params.push(3);
+  }
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const rows = await conn.query(
+      `
+      SELECT
+        r.id,
+        r.user_id,
+        u.username,
+        r.entity_type,
+        r.entity_id,
+        r.rating,
+        r.comment,
+        r.upvotes,
+        r.created_at
+      FROM Reviews r
+      INNER JOIN Users u ON u.id = r.user_id
+      WHERE r.entity_type = ? AND r.entity_id = ?
+      ORDER BY r.upvotes DESC, r.created_at DESC
+      ${limitClause}
+      `,
+      params
+    );
+
+    res.json({ status: 'ok', data: rows });
+  } catch (err) {
+    console.error('Reviews query error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to fetch reviews' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/reviews', requireStudent, async (req, res) => {
+  const { entityType, entityId, rating, comment } = readReviewPayload(req.body);
+
+  if (!['tutor', 'course'].includes(entityType) || !Number.isInteger(entityId) || entityId <= 0) {
+    res.status(400).json({ status: 'error', message: 'Valid entity_type and entity_id are required' });
+    return;
+  }
+
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5 || !comment) {
+    res.status(400).json({ status: 'error', message: 'Rating from 1 to 5 and comment are required' });
+    return;
+  }
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const result = await conn.query(
+      'INSERT INTO Reviews (user_id, entity_type, entity_id, rating, comment) VALUES (?, ?, ?, ?, ?)',
+      [Number(req.user.id), entityType, entityId, rating, comment]
+    );
+    const review = await selectReviewById(conn, Number(result.insertId));
+
+    res.status(201).json({ status: 'ok', data: review });
+  } catch (err) {
+    console.error('Review create error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to create review' });
   } finally {
     if (conn) conn.release();
   }

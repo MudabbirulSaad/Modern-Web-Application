@@ -46,6 +46,23 @@ CREATE TABLE IF NOT EXISTS Course_Tutors (
     ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS Reviews (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  entity_type ENUM('tutor', 'course') NOT NULL,
+  entity_id INT NOT NULL,
+  rating TINYINT NOT NULL,
+  comment TEXT NOT NULL,
+  upvotes INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_reviews_user
+    FOREIGN KEY (user_id) REFERENCES Users(id)
+    ON DELETE CASCADE,
+  CONSTRAINT chk_reviews_rating
+    CHECK (rating BETWEEN 1 AND 5),
+  INDEX idx_reviews_entity (entity_type, entity_id, upvotes, created_at)
+);
+
 INSERT INTO Courses (id, title, department, description)
 VALUES
   (1, 'COS30043 Interface Design and Development', 'Computer Science', 'Design and build responsive web interfaces using modern frontend practices.'),

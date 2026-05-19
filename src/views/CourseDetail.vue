@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
+import ReviewSection from '../components/ReviewSection.vue'
 
 const route = useRoute()
 const course = ref(null)
@@ -100,6 +101,8 @@ onMounted(async () => {
           </div>
         </div>
       </section>
+
+      <ReviewSection entity-type="course" :entity-id="course.id" />
     </div>
   </section>
 </template>

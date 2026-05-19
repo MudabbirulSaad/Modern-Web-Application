@@ -919,3 +919,135 @@ describe('POST /api/auth/login', () => {
     expect(res.body).toEqual({ status: 'error', message: 'Email and password are required' });
   });
 });
+
+describe('Review endpoints', () => {
+  const studentCookie = () => {
+    const token = jwt.sign(
+      { id: 7, role: 'student' },
+      process.env.JWT_SECRET || 'development-jwt-secret',
+      { expiresIn: '7d' }
+    );
+    return [`auth_token=${token}`];
+  };
+
+  const adminCookie = () => {
+    const token = jwt.sign(
+      { id: 1, role: 'admin' },
+      process.env.JWT_SECRET || 'development-jwt-secret',
+      { expiresIn: '7d' }
+    );
+    return [`auth_token=${token}`];
+  };
+
+  it('should return the top three reviews for guests', async () => {
+    const reviews = [
+      {
+        id: 1,
+        user_id: 7,
+        username: 'studentone',
+        entity_type: 'tutor',
+        entity_id: 2,
+        rating: 5,
+        comment: 'Excellent explanations.',
+        upvotes: 8,
+        created_at: '2026-05-18T00:00:00.000Z'
+      }
+    ];
+    const mockConn = {
+      query: jest.fn().mockResolvedValue(reviews),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app).get('/api/reviews?entity_type=tutor&entity_id=2');
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: reviews });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      expect.stringContaining('LIMIT ?'),
+      ['tutor', 2, 3]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return all matching reviews for authenticated students', async () => {
+    const mockConn = {
+      query: jest.fn().mockResolvedValue([]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/reviews?entity_type=course&entity_id=3')
+      .set('Cookie', studentCookie());
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: [] });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      expect.not.stringContaining('LIMIT ?'),
+      ['course', 3]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should create a sanitized review when the requester is a student', async () => {
+    const createdReview = {
+      id: 12,
+      user_id: 7,
+      username: 'studentone',
+      entity_type: 'course',
+      entity_id: 3,
+      rating: 4,
+      comment: '&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;Clear lectures.',
+      upvotes: 0,
+      created_at: '2026-05-18T00:00:00.000Z'
+    };
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce({ insertId: 12 })
+        .mockResolvedValueOnce([createdReview]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/reviews')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'course',
+        entity_id: 3,
+        rating: 4,
+        comment: '<script>alert("x")</script>Clear lectures.'
+      });
+
+    expect(res.statusCode).toEqual(201);
+    expect(res.body).toEqual({ status: 'ok', data: createdReview });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      'INSERT INTO Reviews (user_id, entity_type, entity_id, rating, comment) VALUES (?, ?, ?, ?, ?)',
+      [7, 'course', 3, 4, '&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;Clear lectures.']
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should reject review creation from non-students', async () => {
+    const res = await request(app)
+      .post('/api/reviews')
+      .set('Cookie', adminCookie())
+      .send({
+        entity_type: 'tutor',
+        entity_id: 2,
+        rating: 5,
+        comment: 'Great support.'
+      });
+
+    expect(res.statusCode).toEqual(403);
+    expect(res.body).toEqual({ status: 'error', message: 'Student access required' });
+  });
+});
