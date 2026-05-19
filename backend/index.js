@@ -143,7 +143,30 @@ const readReviewPayload = (body) => ({
   comment: sanitizeReviewComment(body.comment)
 });
 
-const selectReviewById = async (conn, reviewId) => {
+const normalizeReview = (review) => {
+  if (!review) {
+    return null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(review, 'has_upvoted')) {
+    return {
+      ...review,
+      has_upvoted: Boolean(Number(review.has_upvoted))
+    };
+  }
+
+  return review;
+};
+
+const selectReviewById = async (conn, reviewId, viewerId = null) => {
+  const hasViewer = Number.isInteger(Number(viewerId)) && Number(viewerId) > 0;
+  const upvoteSelect = hasViewer
+    ? ', CASE WHEN ru.user_id IS NULL THEN 0 ELSE 1 END AS has_upvoted'
+    : '';
+  const upvoteJoin = hasViewer
+    ? 'LEFT JOIN Review_Upvotes ru ON ru.review_id = r.id AND ru.user_id = ?'
+    : '';
+  const params = hasViewer ? [Number(viewerId), reviewId] : [reviewId];
   const rows = await conn.query(
     `
       SELECT
@@ -156,15 +179,17 @@ const selectReviewById = async (conn, reviewId) => {
         r.comment,
         r.upvotes,
         r.created_at
+        ${upvoteSelect}
       FROM Reviews r
       INNER JOIN Users u ON u.id = r.user_id
+      ${upvoteJoin}
       WHERE r.id = ?
       LIMIT 1
       `,
-    [reviewId]
+    params
   );
 
-  return rows[0] || null;
+  return normalizeReview(rows[0] || null);
 };
 
 app.get('/api/health', (req, res) => {
@@ -300,7 +325,13 @@ app.get('/api/reviews', async (req, res) => {
 
   const viewer = decodeAuthCookie(req);
   const isStudent = viewer?.role === 'student';
-  const params = [entityType, entityId];
+  const upvoteSelect = isStudent
+    ? ', CASE WHEN ru.user_id IS NULL THEN 0 ELSE 1 END AS has_upvoted'
+    : '';
+  const upvoteJoin = isStudent
+    ? 'LEFT JOIN Review_Upvotes ru ON ru.review_id = r.id AND ru.user_id = ?'
+    : '';
+  const params = isStudent ? [Number(viewer.id), entityType, entityId] : [entityType, entityId];
   const limitClause = isStudent ? '' : 'LIMIT ?';
 
   if (!isStudent) {
@@ -322,8 +353,10 @@ app.get('/api/reviews', async (req, res) => {
         r.comment,
         r.upvotes,
         r.created_at
+        ${upvoteSelect}
       FROM Reviews r
       INNER JOIN Users u ON u.id = r.user_id
+      ${upvoteJoin}
       WHERE r.entity_type = ? AND r.entity_id = ?
       ORDER BY r.upvotes DESC, r.created_at DESC
       ${limitClause}
@@ -331,7 +364,7 @@ app.get('/api/reviews', async (req, res) => {
       params
     );
 
-    res.json({ status: 'ok', data: rows });
+    res.json({ status: 'ok', data: rows.map(normalizeReview) });
   } catch (err) {
     console.error('Reviews query error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to fetch reviews' });
@@ -360,7 +393,7 @@ app.post('/api/reviews', requireStudent, async (req, res) => {
       'INSERT INTO Reviews (user_id, entity_type, entity_id, rating, comment) VALUES (?, ?, ?, ?, ?)',
       [Number(req.user.id), entityType, entityId, rating, comment]
     );
-    const review = await selectReviewById(conn, Number(result.insertId));
+    const review = await selectReviewById(conn, Number(result.insertId), Number(req.user.id));
 
     res.status(201).json({ status: 'ok', data: review });
   } catch (err) {
@@ -399,7 +432,7 @@ app.put('/api/reviews/:id', requireStudent, async (req, res) => {
       return;
     }
 
-    const review = await selectReviewById(conn, reviewId);
+    const review = await selectReviewById(conn, reviewId, Number(req.user.id));
 
     res.json({ status: 'ok', data: review });
   } catch (err) {
@@ -435,6 +468,72 @@ app.delete('/api/reviews/:id', requireStudent, async (req, res) => {
   } catch (err) {
     console.error('Review delete error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to delete review' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/reviews/:id/upvote', requireStudent, async (req, res) => {
+  const reviewId = Number(req.params.id);
+  const userId = Number(req.user.id);
+
+  if (!Number.isInteger(reviewId) || reviewId <= 0) {
+    res.status(400).json({ status: 'error', message: 'Valid review id is required' });
+    return;
+  }
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const reviewRows = await conn.query(
+      'SELECT id FROM Reviews WHERE id = ? LIMIT 1',
+      [reviewId]
+    );
+
+    if (reviewRows.length === 0) {
+      await conn.rollback();
+      res.status(404).json({ status: 'error', message: 'Review not found' });
+      return;
+    }
+
+    const upvoteRows = await conn.query(
+      'SELECT review_id FROM Review_Upvotes WHERE review_id = ? AND user_id = ? LIMIT 1',
+      [reviewId, userId]
+    );
+
+    if (upvoteRows.length > 0) {
+      await conn.query(
+        'DELETE FROM Review_Upvotes WHERE review_id = ? AND user_id = ?',
+        [reviewId, userId]
+      );
+      await conn.query(
+        'UPDATE Reviews SET upvotes = GREATEST(upvotes - 1, 0) WHERE id = ?',
+        [reviewId]
+      );
+    } else {
+      await conn.query(
+        'INSERT INTO Review_Upvotes (review_id, user_id) VALUES (?, ?)',
+        [reviewId, userId]
+      );
+      await conn.query(
+        'UPDATE Reviews SET upvotes = upvotes + 1 WHERE id = ?',
+        [reviewId]
+      );
+    }
+
+    const review = await selectReviewById(conn, reviewId, userId);
+    await conn.commit();
+
+    res.json({ status: 'ok', data: review });
+  } catch (err) {
+    if (conn) {
+      await conn.rollback();
+    }
+
+    console.error('Review upvote error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to update review upvote' });
   } finally {
     if (conn) conn.release();
   }

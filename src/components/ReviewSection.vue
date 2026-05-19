@@ -23,6 +23,7 @@ const actionError = ref('')
 const submitting = ref(false)
 const updating = ref(false)
 const deletingId = ref(null)
+const upvotingId = ref(null)
 const editingReviewId = ref(null)
 const editRating = ref(5)
 const editComment = ref('')
@@ -34,6 +35,8 @@ const canReview = computed(() => userStore.isStudent)
 const entityLabel = computed(() => props.entityType === 'course' ? 'course' : 'tutor')
 const reviewLimitText = computed(() => canReview.value ? 'All reviews' : 'Top reviews')
 const isReviewAuthor = (review) => userStore.userId && Number(review.user_id) === Number(userStore.userId)
+
+const upvoteLabel = (review) => `${review.upvotes} helpful vote${Number(review.upvotes) === 1 ? '' : 's'}`
 
 const fetchReviews = async () => {
   loading.value = true
@@ -162,6 +165,35 @@ const deleteReview = async (review) => {
     actionError.value = err.message || 'Review could not be deleted. Please try again.'
   } finally {
     deletingId.value = null
+  }
+}
+
+const toggleUpvote = async (review) => {
+  if (!canReview.value) {
+    return
+  }
+
+  actionError.value = ''
+  upvotingId.value = review.id
+
+  try {
+    const response = await fetch(`/api/reviews/${review.id}/upvote`, {
+      method: 'POST',
+      credentials: 'include'
+    })
+    const payload = await response.json()
+
+    if (!response.ok) {
+      throw new Error(payload.message || 'Unable to update upvote')
+    }
+
+    reviews.value = reviews.value.map((currentReview) => (
+      currentReview.id === review.id ? payload.data : currentReview
+    ))
+  } catch (err) {
+    actionError.value = err.message || 'Upvote could not be updated. Please try again.'
+  } finally {
+    upvotingId.value = null
   }
 }
 
@@ -326,7 +358,25 @@ watch(
         </form>
 
         <p v-else class="mb-3">{{ review.comment }}</p>
-        <p class="text-body-secondary small mb-0">{{ review.upvotes }} upvotes</p>
+
+        <div class="d-flex align-items-center gap-2">
+          <button
+            class="btn btn-sm"
+            :class="review.has_upvoted ? 'btn-primary' : 'btn-outline-primary'"
+            type="button"
+            :disabled="!canReview || upvotingId === review.id"
+            :aria-pressed="review.has_upvoted ? 'true' : 'false'"
+            @click="toggleUpvote(review)"
+          >
+            <span
+              v-if="upvotingId === review.id"
+              class="spinner-border spinner-border-sm me-1"
+              aria-hidden="true"
+            ></span>
+            Helpful
+          </button>
+          <p class="text-body-secondary small mb-0">{{ upvoteLabel(review) }}</p>
+        </div>
       </BaseCard>
     </div>
   </section>

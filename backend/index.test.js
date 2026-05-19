@@ -987,8 +987,9 @@ describe('Review endpoints', () => {
     expect(res.body).toEqual({ status: 'ok', data: [] });
     expect(mockConn.query).toHaveBeenCalledWith(
       expect.not.stringContaining('LIMIT ?'),
-      ['course', 3]
+      [7, 'course', 3]
     );
+    expect(mockConn.query.mock.calls[0][0]).toEqual(expect.stringContaining('Review_Upvotes'));
     expect(mockConn.release).toHaveBeenCalled();
 
     spy.mockRestore();
@@ -1134,6 +1135,104 @@ describe('Review endpoints', () => {
       'DELETE FROM Reviews WHERE id = ? AND user_id = ?',
       ['12', 7]
     );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should upvote a review when the requester has not upvoted it', async () => {
+    const updatedReview = {
+      id: 12,
+      user_id: 5,
+      username: 'studenttwo',
+      entity_type: 'course',
+      entity_id: 3,
+      rating: 5,
+      comment: 'Very helpful.',
+      upvotes: 1,
+      has_upvoted: true,
+      created_at: '2026-05-18T00:00:00.000Z'
+    };
+    const mockConn = {
+      beginTransaction: jest.fn().mockResolvedValue(),
+      commit: jest.fn().mockResolvedValue(),
+      rollback: jest.fn().mockResolvedValue(),
+      query: jest.fn()
+        .mockResolvedValueOnce([{ id: 12 }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce([updatedReview]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/reviews/12/upvote')
+      .set('Cookie', studentCookie());
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: updatedReview });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      3,
+      'INSERT INTO Review_Upvotes (review_id, user_id) VALUES (?, ?)',
+      [12, 7]
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      4,
+      'UPDATE Reviews SET upvotes = upvotes + 1 WHERE id = ?',
+      [12]
+    );
+    expect(mockConn.commit).toHaveBeenCalled();
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should remove an upvote when the requester has already upvoted the review', async () => {
+    const updatedReview = {
+      id: 12,
+      user_id: 5,
+      username: 'studenttwo',
+      entity_type: 'course',
+      entity_id: 3,
+      rating: 5,
+      comment: 'Very helpful.',
+      upvotes: 0,
+      has_upvoted: false,
+      created_at: '2026-05-18T00:00:00.000Z'
+    };
+    const mockConn = {
+      beginTransaction: jest.fn().mockResolvedValue(),
+      commit: jest.fn().mockResolvedValue(),
+      rollback: jest.fn().mockResolvedValue(),
+      query: jest.fn()
+        .mockResolvedValueOnce([{ id: 12 }])
+        .mockResolvedValueOnce([{ review_id: 12 }])
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce([updatedReview]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/reviews/12/upvote')
+      .set('Cookie', studentCookie());
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: updatedReview });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      3,
+      'DELETE FROM Review_Upvotes WHERE review_id = ? AND user_id = ?',
+      [12, 7]
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      4,
+      'UPDATE Reviews SET upvotes = GREATEST(upvotes - 1, 0) WHERE id = ?',
+      [12]
+    );
+    expect(mockConn.commit).toHaveBeenCalled();
     expect(mockConn.release).toHaveBeenCalled();
 
     spy.mockRestore();
