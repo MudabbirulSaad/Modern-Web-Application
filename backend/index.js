@@ -15,6 +15,35 @@ app.use(cors());
 app.use(express.json());
 app.use(cookieParser());
 
+const requireAdmin = (req, res, next) => {
+  const token = req.cookies?.[AUTH_COOKIE_NAME];
+
+  if (!token) {
+    res.status(401).json({ status: 'error', message: 'Authentication required' });
+    return;
+  }
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+
+    if (decoded.role !== 'admin') {
+      res.status(403).json({ status: 'error', message: 'Admin access required' });
+      return;
+    }
+
+    req.user = decoded;
+    next();
+  } catch (err) {
+    res.status(401).json({ status: 'error', message: 'Authentication required' });
+  }
+};
+
+const readTutorPayload = (body) => ({
+  name: String(body.name || '').trim(),
+  department: String(body.department || '').trim(),
+  bio: String(body.bio || '').trim()
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
 });
@@ -171,6 +200,93 @@ app.get('/api/tutors/:id', async (req, res) => {
   } catch (err) {
     console.error('Tutor detail query error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to fetch tutor' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/tutors', requireAdmin, async (req, res) => {
+  const { name, department, bio } = readTutorPayload(req.body);
+
+  if (!name || !department || !bio) {
+    res.status(400).json({ status: 'error', message: 'Name, department, and bio are required' });
+    return;
+  }
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const result = await conn.query(
+      'INSERT INTO Tutors (name, department, bio) VALUES (?, ?, ?)',
+      [name, department, bio]
+    );
+    const rows = await conn.query(
+      'SELECT id, name, department, bio, created_at, updated_at FROM Tutors WHERE id = ? LIMIT 1',
+      [Number(result.insertId)]
+    );
+
+    res.status(201).json({ status: 'ok', data: rows[0] });
+  } catch (err) {
+    console.error('Tutor create error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to create tutor' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.put('/api/tutors/:id', requireAdmin, async (req, res) => {
+  const { name, department, bio } = readTutorPayload(req.body);
+
+  if (!name || !department || !bio) {
+    res.status(400).json({ status: 'error', message: 'Name, department, and bio are required' });
+    return;
+  }
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const result = await conn.query(
+      'UPDATE Tutors SET name = ?, department = ?, bio = ? WHERE id = ?',
+      [name, department, bio, req.params.id]
+    );
+
+    if (Number(result.affectedRows || 0) === 0) {
+      res.status(404).json({ status: 'error', message: 'Tutor not found' });
+      return;
+    }
+
+    const rows = await conn.query(
+      'SELECT id, name, department, bio, created_at, updated_at FROM Tutors WHERE id = ? LIMIT 1',
+      [req.params.id]
+    );
+
+    res.json({ status: 'ok', data: rows[0] });
+  } catch (err) {
+    console.error('Tutor update error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to update tutor' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.delete('/api/tutors/:id', requireAdmin, async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const result = await conn.query(
+      'DELETE FROM Tutors WHERE id = ?',
+      [req.params.id]
+    );
+
+    if (Number(result.affectedRows || 0) === 0) {
+      res.status(404).json({ status: 'error', message: 'Tutor not found' });
+      return;
+    }
+
+    res.json({ status: 'ok', message: 'Tutor deleted' });
+  } catch (err) {
+    console.error('Tutor delete error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to delete tutor' });
   } finally {
     if (conn) conn.release();
   }
