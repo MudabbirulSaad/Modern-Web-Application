@@ -93,6 +93,44 @@ app.get('/api/courses', async (req, res) => {
   }
 });
 
+app.get('/api/courses/:id', async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const courseRows = await conn.query(
+      'SELECT id, title, department, description, created_at, updated_at FROM Courses WHERE id = ? LIMIT 1',
+      [req.params.id]
+    );
+
+    if (courseRows.length === 0) {
+      res.status(404).json({ status: 'error', message: 'Course not found' });
+      return;
+    }
+
+    const tutorRows = await conn.query(
+      `
+      SELECT
+        t.id,
+        t.name,
+        t.department,
+        t.bio
+      FROM Course_Tutors ct
+      INNER JOIN Tutors t ON t.id = ct.tutor_id
+      WHERE ct.course_id = ?
+      ORDER BY t.name ASC
+      `,
+      [req.params.id]
+    );
+
+    res.json({ status: 'ok', data: { ...courseRows[0], tutors: tutorRows } });
+  } catch (err) {
+    console.error('Course detail query error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to fetch course' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 if (process.env.NODE_ENV !== 'test') {
   pool.getConnection()
     .then(conn => {

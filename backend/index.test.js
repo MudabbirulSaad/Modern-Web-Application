@@ -196,3 +196,82 @@ describe('GET /api/courses', () => {
     spy.mockRestore();
   });
 });
+
+describe('GET /api/courses/:id', () => {
+  it('should return a single course with assigned tutors from the database', async () => {
+    const mockCourse = {
+      id: 1,
+      title: 'COS30043 Interface Design and Development',
+      department: 'Computer Science',
+      description: 'Design and build responsive web interfaces using modern frontend practices.',
+      created_at: '2026-05-18T00:00:00.000Z',
+      updated_at: '2026-05-18T00:00:00.000Z'
+    };
+    const mockTutors = [
+      {
+        id: 1,
+        name: 'Dr Maya Chen',
+        department: 'Computer Science',
+        bio: 'Specialises in web development and human-computer interaction.'
+      },
+      {
+        id: 3,
+        name: 'Dr Amelia Wright',
+        department: 'Software Engineering',
+        bio: 'Focuses on agile delivery and software architecture.'
+      }
+    ];
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([mockCourse])
+        .mockResolvedValueOnce(mockTutors),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app).get('/api/courses/1');
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: { ...mockCourse, tutors: mockTutors } });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      'SELECT id, title, department, description, created_at, updated_at FROM Courses WHERE id = ? LIMIT 1',
+      ['1']
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('FROM Course_Tutors ct'),
+      ['1']
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return 404 when the course does not exist', async () => {
+    const mockConn = {
+      query: jest.fn().mockResolvedValue([]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app).get('/api/courses/999');
+
+    expect(res.statusCode).toEqual(404);
+    expect(res.body).toEqual({ status: 'error', message: 'Course not found' });
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return 500 when the course cannot be fetched', async () => {
+    const spy = jest.spyOn(pool, 'getConnection').mockRejectedValue(new Error('Connection failed'));
+
+    const res = await request(app).get('/api/courses/1');
+
+    expect(res.statusCode).toEqual(500);
+    expect(res.body).toEqual({ status: 'error', message: 'Unable to fetch course' });
+
+    spy.mockRestore();
+  });
+});

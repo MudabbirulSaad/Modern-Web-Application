@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import CourseList from '../views/CourseList.vue'
+import CourseDetail from '../views/CourseDetail.vue'
 import TutorList from '../views/TutorList.vue'
 import TutorDetail from '../views/TutorDetail.vue'
 
@@ -14,6 +15,11 @@ const routes = [
     path: '/courses',
     name: 'courses',
     component: CourseList
+  },
+  {
+    path: '/courses/:id',
+    name: 'course-detail',
+    component: CourseDetail
   },
   {
     path: '/tutors',

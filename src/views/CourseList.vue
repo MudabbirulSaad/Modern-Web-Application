@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
 
 const courses = ref([])
@@ -73,6 +74,12 @@ onMounted(async () => {
           <template #footer>
             <p class="small text-uppercase fw-bold text-body-secondary mb-1">Tutors</p>
             <p class="mb-0">{{ course.tutor_names || 'Tutors to be announced' }}</p>
+            <RouterLink
+              class="btn btn-outline-primary btn-sm mt-3"
+              :to="{ name: 'course-detail', params: { id: course.id } }"
+            >
+              View course
+            </RouterLink>
           </template>
         </BaseCard>
       </div>
