@@ -1,6 +1,7 @@
 import request from 'supertest';
 import app from './index';
 import pool from './db';
+import bcrypt from 'bcrypt';
 import { jest } from '@jest/globals';
 
 afterAll(async () => {
@@ -271,6 +272,118 @@ describe('GET /api/courses/:id', () => {
 
     expect(res.statusCode).toEqual(500);
     expect(res.body).toEqual({ status: 'error', message: 'Unable to fetch course' });
+
+    spy.mockRestore();
+  });
+});
+
+describe('POST /api/auth/register', () => {
+  it('should register the first user as an admin with a hashed password', async () => {
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ user_count: 0 }])
+        .mockResolvedValueOnce({ insertId: 1 }),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        username: 'firststudent',
+        email: 'first@example.edu',
+        password: 'securepass123'
+      });
+
+    expect(res.statusCode).toEqual(201);
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: {
+        id: 1,
+        username: 'firststudent',
+        email: 'first@example.edu',
+        role: 'admin'
+      }
+    });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      'SELECT COUNT(*) AS user_count FROM Users'
+    );
+
+    const insertCall = mockConn.query.mock.calls[1];
+    expect(insertCall[0]).toEqual(
+      'INSERT INTO Users (username, email, password_hash, role) VALUES (?, ?, ?, ?)'
+    );
+    expect(insertCall[1][0]).toEqual('firststudent');
+    expect(insertCall[1][1]).toEqual('first@example.edu');
+    expect(insertCall[1][2]).not.toEqual('securepass123');
+    expect(await bcrypt.compare('securepass123', insertCall[1][2])).toEqual(true);
+    expect(insertCall[1][3]).toEqual('admin');
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should register later users as students', async () => {
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ user_count: 1 }])
+        .mockResolvedValueOnce({ insertId: 2 }),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        username: 'secondstudent',
+        email: 'second@example.edu',
+        password: 'securepass123'
+      });
+
+    expect(res.statusCode).toEqual(201);
+    expect(res.body.data.role).toEqual('student');
+    expect(mockConn.query.mock.calls[1][1][3]).toEqual('student');
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return 400 when required fields are missing', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        username: '',
+        email: 'missing@example.edu',
+        password: 'securepass123'
+      });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'Username, email, and password are required' });
+  });
+
+  it('should return 409 when the username or email already exists', async () => {
+    const duplicateError = new Error('Duplicate entry');
+    duplicateError.code = 'ER_DUP_ENTRY';
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ user_count: 1 }])
+        .mockRejectedValueOnce(duplicateError),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({
+        username: 'existing',
+        email: 'existing@example.edu',
+        password: 'securepass123'
+      });
+
+    expect(res.statusCode).toEqual(409);
+    expect(res.body).toEqual({ status: 'error', message: 'Username or email already exists' });
+    expect(mockConn.release).toHaveBeenCalled();
 
     spy.mockRestore();
   });

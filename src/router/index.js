@@ -4,6 +4,8 @@ import CourseList from '../views/CourseList.vue'
 import CourseDetail from '../views/CourseDetail.vue'
 import TutorList from '../views/TutorList.vue'
 import TutorDetail from '../views/TutorDetail.vue'
+import Register from '../views/Register.vue'
+import Login from '../views/Login.vue'
 
 const routes = [
   {
@@ -30,6 +32,16 @@ const routes = [
     path: '/tutors/:id',
     name: 'tutor-detail',
     component: TutorDetail
+  },
+  {
+    path: '/register',
+    name: 'register',
+    component: Register
+  },
+  {
+    path: '/login',
+    name: 'login',
+    component: Login
   }
 ]
 
