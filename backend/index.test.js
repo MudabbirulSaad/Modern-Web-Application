@@ -92,6 +92,38 @@ describe('GET /api/tutors', () => {
 
     spy.mockRestore();
   });
+
+  it('should filter tutors by search and department queries', async () => {
+    const mockTutors = [
+      {
+        id: 1,
+        name: 'Dr Maya Chen',
+        department: 'Computer Science',
+        bio: 'Specialises in web development and human-computer interaction.',
+        created_at: '2026-05-18T00:00:00.000Z',
+        updated_at: '2026-05-18T00:00:00.000Z'
+      }
+    ];
+    const mockConn = {
+      query: jest.fn().mockResolvedValue(mockTutors),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/tutors')
+      .query({ search: 'maya', department: 'Computer Science' });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: mockTutors });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      expect.stringContaining('WHERE (name LIKE ? OR bio LIKE ?) AND department = ?'),
+      ['%maya%', '%maya%', 'Computer Science']
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
 });
 
 describe('GET /api/tutors/:id', () => {
@@ -377,6 +409,39 @@ describe('GET /api/courses', () => {
 
     expect(res.statusCode).toEqual(500);
     expect(res.body).toEqual({ status: 'error', message: 'Unable to fetch courses' });
+
+    spy.mockRestore();
+  });
+
+  it('should filter courses by search and department queries', async () => {
+    const mockCourses = [
+      {
+        id: 1,
+        title: 'COS30043 Interface Design and Development',
+        department: 'Computer Science',
+        description: 'Design and build responsive web interfaces using modern frontend practices.',
+        tutor_names: 'Dr Maya Chen'
+      }
+    ];
+    const mockConn = {
+      query: jest.fn().mockResolvedValue(mockCourses),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/courses')
+      .query({ search: 'interface', department: 'Computer Science' });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: mockCourses });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      expect.stringContaining('WHERE (c.title LIKE ? OR c.description LIKE ? OR EXISTS ('),
+      ['%interface%', '%interface%', '%interface%', 'Computer Science']
+    );
+    expect(mockConn.query.mock.calls[0][0]).toContain('t_search.name LIKE ?');
+    expect(mockConn.query.mock.calls[0][0]).toContain('AND c.department = ?');
+    expect(mockConn.release).toHaveBeenCalled();
 
     spy.mockRestore();
   });

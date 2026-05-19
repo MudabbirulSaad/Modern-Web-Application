@@ -86,6 +86,56 @@ const readCoursePayload = (body) => ({
   )]
 });
 
+const readDirectoryFilters = (query) => ({
+  search: String(query.search || '').trim(),
+  department: String(query.department || '').trim()
+});
+
+const buildTutorFilters = ({ search, department }) => {
+  const clauses = [];
+  const params = [];
+
+  if (search) {
+    clauses.push('(name LIKE ? OR bio LIKE ?)');
+    params.push(`%${search}%`, `%${search}%`);
+  }
+
+  if (department) {
+    clauses.push('department = ?');
+    params.push(department);
+  }
+
+  return {
+    whereClause: clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '',
+    params
+  };
+};
+
+const buildCourseFilters = ({ search, department }) => {
+  const clauses = [];
+  const params = [];
+
+  if (search) {
+    clauses.push(`(c.title LIKE ? OR c.description LIKE ? OR EXISTS (
+      SELECT 1
+      FROM Course_Tutors ct_search
+      INNER JOIN Tutors t_search ON t_search.id = ct_search.tutor_id
+      WHERE ct_search.course_id = c.id AND t_search.name LIKE ?
+    ))`);
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+  }
+
+  if (department) {
+    clauses.push('c.department = ?');
+    params.push(department);
+  }
+
+  return {
+    whereClause: clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '',
+    params
+  };
+};
+
 const selectCourseById = async (conn, courseId, viewerId = null) => {
   const hasViewer = Number.isInteger(Number(viewerId)) && Number(viewerId) > 0;
   const favoriteSelect = hasViewer
@@ -673,13 +723,15 @@ app.delete('/api/users/:id/favorites', requireStudent, async (req, res) => {
 app.get('/api/tutors', async (req, res) => {
   const viewer = decodeAuthCookie(req);
   const isStudent = viewer?.role === 'student';
+  const { whereClause, params } = buildTutorFilters(readDirectoryFilters(req.query));
 
   let conn;
   try {
     conn = await pool.getConnection();
-    const rows = isStudent
-      ? await conn.query(
-        `
+    let rows;
+
+    if (isStudent) {
+      const sql = `
       SELECT
         t.id,
         t.name,
@@ -690,13 +742,17 @@ app.get('/api/tutors', async (req, res) => {
         CASE WHEN f.id IS NULL THEN 0 ELSE 1 END AS has_favorite
       FROM Tutors t
       LEFT JOIN Favorites f ON f.entity_type = "tutor" AND f.entity_id = t.id AND f.user_id = ?
+      ${whereClause}
       ORDER BY t.name ASC
-      `,
-        [Number(viewer.id)]
-      )
-      : await conn.query(
-        'SELECT id, name, department, bio, created_at, updated_at FROM Tutors ORDER BY name ASC'
-      );
+      `;
+      rows = await conn.query(sql, [Number(viewer.id), ...params]);
+    } else {
+      const sql = `SELECT id, name, department, bio, created_at, updated_at FROM Tutors${whereClause} ORDER BY name ASC`;
+      rows = params.length > 0
+        ? await conn.query(sql, params)
+        : await conn.query(sql);
+    }
+
     res.json({ status: 'ok', data: rows.map(normalizeFavoriteFields) });
   } catch (err) {
     console.error('Tutors query error:', err);
@@ -840,12 +896,15 @@ app.delete('/api/tutors/:id', requireAdmin, async (req, res) => {
 app.get('/api/courses', async (req, res) => {
   const viewer = decodeAuthCookie(req);
   const isStudent = viewer?.role === 'student';
+  const { whereClause, params } = buildCourseFilters(readDirectoryFilters(req.query));
 
   let conn;
   try {
     conn = await pool.getConnection();
-    const rows = isStudent
-      ? await conn.query(`
+    let rows;
+
+    if (isStudent) {
+      const sql = `
       SELECT
         c.id,
         c.title,
@@ -860,10 +919,13 @@ app.get('/api/courses', async (req, res) => {
       LEFT JOIN Course_Tutors ct ON ct.course_id = c.id
       LEFT JOIN Tutors t ON t.id = ct.tutor_id
       LEFT JOIN Favorites f ON f.entity_type = "course" AND f.entity_id = c.id AND f.user_id = ?
+      ${whereClause}
       GROUP BY c.id, c.title, c.department, c.description, c.created_at, c.updated_at, f.id
       ORDER BY c.title ASC
-    `, [Number(viewer.id)])
-      : await conn.query(`
+    `;
+      rows = await conn.query(sql, [Number(viewer.id), ...params]);
+    } else {
+      const sql = `
       SELECT
         c.id,
         c.title,
@@ -876,9 +938,15 @@ app.get('/api/courses', async (req, res) => {
       FROM Courses c
       LEFT JOIN Course_Tutors ct ON ct.course_id = c.id
       LEFT JOIN Tutors t ON t.id = ct.tutor_id
+      ${whereClause}
       GROUP BY c.id, c.title, c.department, c.description, c.created_at, c.updated_at
       ORDER BY c.title ASC
-    `);
+    `;
+      rows = params.length > 0
+        ? await conn.query(sql, params)
+        : await conn.query(sql);
+    }
+
     res.json({ status: 'ok', data: rows.map(normalizeFavoriteFields) });
   } catch (err) {
     console.error('Courses query error:', err);
