@@ -461,6 +461,235 @@ describe('GET /api/courses/:id', () => {
   });
 });
 
+describe('Protected course management endpoints', () => {
+  const adminCookie = () => {
+    const token = jwt.sign(
+      { id: 1, role: 'admin' },
+      process.env.JWT_SECRET || 'development-jwt-secret',
+      { expiresIn: '7d' }
+    );
+    return [`auth_token=${token}`];
+  };
+
+  const studentCookie = () => {
+    const token = jwt.sign(
+      { id: 2, role: 'student' },
+      process.env.JWT_SECRET || 'development-jwt-secret',
+      { expiresIn: '7d' }
+    );
+    return [`auth_token=${token}`];
+  };
+
+  it('should create a course with assigned tutors when the requester is an admin', async () => {
+    const createdCourse = {
+      id: 4,
+      title: 'COS10005 Web Development',
+      department: 'Computer Science',
+      description: 'Build accessible web applications.',
+      created_at: '2026-05-18T00:00:00.000Z',
+      updated_at: '2026-05-18T00:00:00.000Z'
+    };
+    const assignedTutors = [
+      {
+        id: 1,
+        name: 'Dr Maya Chen',
+        department: 'Computer Science',
+        bio: 'Specialises in web development and human-computer interaction.'
+      },
+      {
+        id: 3,
+        name: 'Dr Amelia Wright',
+        department: 'Software Engineering',
+        bio: 'Focuses on agile delivery and software architecture.'
+      }
+    ];
+    const mockConn = {
+      beginTransaction: jest.fn().mockResolvedValue(),
+      commit: jest.fn().mockResolvedValue(),
+      rollback: jest.fn().mockResolvedValue(),
+      query: jest.fn()
+        .mockResolvedValueOnce({ insertId: 4 })
+        .mockResolvedValueOnce({ affectedRows: 2 })
+        .mockResolvedValueOnce([createdCourse])
+        .mockResolvedValueOnce(assignedTutors),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/courses')
+      .set('Cookie', adminCookie())
+      .send({
+        title: ' COS10005 Web Development ',
+        department: ' Computer Science ',
+        description: ' Build accessible web applications. ',
+        tutorIds: [1, '3', 3]
+      });
+
+    expect(res.statusCode).toEqual(201);
+    expect(res.body).toEqual({ status: 'ok', data: { ...createdCourse, tutors: assignedTutors } });
+    expect(mockConn.beginTransaction).toHaveBeenCalled();
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      'INSERT INTO Courses (title, department, description) VALUES (?, ?, ?)',
+      ['COS10005 Web Development', 'Computer Science', 'Build accessible web applications.']
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      'INSERT INTO Course_Tutors (course_id, tutor_id) VALUES (?, ?), (?, ?)',
+      [4, 1, 4, 3]
+    );
+    expect(mockConn.commit).toHaveBeenCalled();
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should reject course creation when the requester is not an admin', async () => {
+    const res = await request(app)
+      .post('/api/courses')
+      .set('Cookie', studentCookie())
+      .send({
+        title: 'COS10005 Web Development',
+        department: 'Computer Science',
+        description: 'Build accessible web applications.',
+        tutorIds: [1]
+      });
+
+    expect(res.statusCode).toEqual(403);
+    expect(res.body).toEqual({ status: 'error', message: 'Admin access required' });
+  });
+
+  it('should update a course and replace assigned tutors when the requester is an admin', async () => {
+    const updatedCourse = {
+      id: 4,
+      title: 'COS10005 Web Development',
+      department: 'Computer Science',
+      description: 'Build accessible and responsive web applications.',
+      created_at: '2026-05-18T00:00:00.000Z',
+      updated_at: '2026-05-18T00:00:00.000Z'
+    };
+    const assignedTutors = [
+      {
+        id: 2,
+        name: 'Prof Liam Patel',
+        department: 'Information Systems',
+        bio: 'Teaches database design and enterprise systems.'
+      }
+    ];
+    const mockConn = {
+      beginTransaction: jest.fn().mockResolvedValue(),
+      commit: jest.fn().mockResolvedValue(),
+      rollback: jest.fn().mockResolvedValue(),
+      query: jest.fn()
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce({ affectedRows: 2 })
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce([updatedCourse])
+        .mockResolvedValueOnce(assignedTutors),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/courses/4')
+      .set('Cookie', adminCookie())
+      .send({
+        title: 'COS10005 Web Development',
+        department: 'Computer Science',
+        description: 'Build accessible and responsive web applications.',
+        tutorIds: [2]
+      });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: { ...updatedCourse, tutors: assignedTutors } });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      'UPDATE Courses SET title = ?, department = ?, description = ? WHERE id = ?',
+      ['COS10005 Web Development', 'Computer Science', 'Build accessible and responsive web applications.', '4']
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      'DELETE FROM Course_Tutors WHERE course_id = ?',
+      ['4']
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      3,
+      'INSERT INTO Course_Tutors (course_id, tutor_id) VALUES (?, ?)',
+      ['4', 2]
+    );
+    expect(mockConn.commit).toHaveBeenCalled();
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return 404 when updating a missing course', async () => {
+    const mockConn = {
+      beginTransaction: jest.fn().mockResolvedValue(),
+      commit: jest.fn().mockResolvedValue(),
+      rollback: jest.fn().mockResolvedValue(),
+      query: jest.fn().mockResolvedValue({ affectedRows: 0 }),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/courses/999')
+      .set('Cookie', adminCookie())
+      .send({
+        title: 'Missing Course',
+        department: 'Computer Science',
+        description: 'No course.',
+        tutorIds: []
+      });
+
+    expect(res.statusCode).toEqual(404);
+    expect(res.body).toEqual({ status: 'error', message: 'Course not found' });
+    expect(mockConn.rollback).toHaveBeenCalled();
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should delete a course when the requester is an admin', async () => {
+    const mockConn = {
+      query: jest.fn().mockResolvedValue({ affectedRows: 1 }),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .delete('/api/courses/4')
+      .set('Cookie', adminCookie());
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', message: 'Course deleted' });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      'DELETE FROM Courses WHERE id = ?',
+      ['4']
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return 400 when course fields are missing', async () => {
+    const res = await request(app)
+      .post('/api/courses')
+      .set('Cookie', adminCookie())
+      .send({
+        title: '',
+        department: 'Computer Science',
+        description: 'No title.',
+        tutorIds: [1]
+      });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'Title, department, and description are required' });
+  });
+});
+
 describe('POST /api/auth/register', () => {
   it('should register the first user as an admin with a hashed password', async () => {
     const mockConn = {
