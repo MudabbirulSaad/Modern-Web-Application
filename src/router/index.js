@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import CourseList from '../views/CourseList.vue'
 import TutorList from '../views/TutorList.vue'
+import TutorDetail from '../views/TutorDetail.vue'
 
 const routes = [
   {
@@ -18,6 +19,11 @@ const routes = [
     path: '/tutors',
     name: 'tutors',
     component: TutorList
+  },
+  {
+    path: '/tutors/:id',
+    name: 'tutor-detail',
+    component: TutorDetail
   }
 ]
 

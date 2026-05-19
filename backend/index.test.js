@@ -92,6 +92,63 @@ describe('GET /api/tutors', () => {
   });
 });
 
+describe('GET /api/tutors/:id', () => {
+  it('should return a single tutor from the database', async () => {
+    const mockTutor = {
+      id: 1,
+      name: 'Dr Maya Chen',
+      department: 'Computer Science',
+      bio: 'Specialises in web development and human-computer interaction.',
+      created_at: '2026-05-18T00:00:00.000Z',
+      updated_at: '2026-05-18T00:00:00.000Z'
+    };
+    const mockConn = {
+      query: jest.fn().mockResolvedValue([mockTutor]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app).get('/api/tutors/1');
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: mockTutor });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      'SELECT id, name, department, bio, created_at, updated_at FROM Tutors WHERE id = ? LIMIT 1',
+      ['1']
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return 404 when the tutor does not exist', async () => {
+    const mockConn = {
+      query: jest.fn().mockResolvedValue([]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app).get('/api/tutors/999');
+
+    expect(res.statusCode).toEqual(404);
+    expect(res.body).toEqual({ status: 'error', message: 'Tutor not found' });
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return 500 when the tutor cannot be fetched', async () => {
+    const spy = jest.spyOn(pool, 'getConnection').mockRejectedValue(new Error('Connection failed'));
+
+    const res = await request(app).get('/api/tutors/1');
+
+    expect(res.statusCode).toEqual(500);
+    expect(res.body).toEqual({ status: 'error', message: 'Unable to fetch tutor' });
+
+    spy.mockRestore();
+  });
+});
+
 describe('GET /api/courses', () => {
   it('should return the list of courses with linked tutors from the database', async () => {
     const mockCourses = [

@@ -42,6 +42,29 @@ app.get('/api/tutors', async (req, res) => {
   }
 });
 
+app.get('/api/tutors/:id', async (req, res) => {
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const rows = await conn.query(
+      'SELECT id, name, department, bio, created_at, updated_at FROM Tutors WHERE id = ? LIMIT 1',
+      [req.params.id]
+    );
+
+    if (rows.length === 0) {
+      res.status(404).json({ status: 'error', message: 'Tutor not found' });
+      return;
+    }
+
+    res.json({ status: 'ok', data: rows[0] });
+  } catch (err) {
+    console.error('Tutor detail query error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to fetch tutor' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
 app.get('/api/courses', async (req, res) => {
   let conn;
   try {
