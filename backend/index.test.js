@@ -1050,4 +1050,92 @@ describe('Review endpoints', () => {
     expect(res.statusCode).toEqual(403);
     expect(res.body).toEqual({ status: 'error', message: 'Student access required' });
   });
+
+  it('should update a review when the requester owns it', async () => {
+    const updatedReview = {
+      id: 12,
+      user_id: 7,
+      username: 'studentone',
+      entity_type: 'course',
+      entity_id: 3,
+      rating: 5,
+      comment: 'Updated after the second lecture.',
+      upvotes: 0,
+      created_at: '2026-05-18T00:00:00.000Z'
+    };
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce([updatedReview]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/reviews/12')
+      .set('Cookie', studentCookie())
+      .send({
+        rating: 5,
+        comment: 'Updated after the second lecture.'
+      });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: updatedReview });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      'UPDATE Reviews SET rating = ?, comment = ? WHERE id = ? AND user_id = ?',
+      [5, 'Updated after the second lecture.', '12', 7]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should not update a review owned by another user', async () => {
+    const mockConn = {
+      query: jest.fn().mockResolvedValue({ affectedRows: 0 }),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/reviews/12')
+      .set('Cookie', studentCookie())
+      .send({
+        rating: 4,
+        comment: 'Trying to edit another review.'
+      });
+
+    expect(res.statusCode).toEqual(404);
+    expect(res.body).toEqual({ status: 'error', message: 'Review not found' });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      'UPDATE Reviews SET rating = ?, comment = ? WHERE id = ? AND user_id = ?',
+      [4, 'Trying to edit another review.', '12', 7]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should delete a review when the requester owns it', async () => {
+    const mockConn = {
+      query: jest.fn().mockResolvedValue({ affectedRows: 1 }),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .delete('/api/reviews/12')
+      .set('Cookie', studentCookie());
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', message: 'Review deleted' });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      'DELETE FROM Reviews WHERE id = ? AND user_id = ?',
+      ['12', 7]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
 });
