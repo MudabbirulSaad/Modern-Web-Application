@@ -2,16 +2,23 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
+import FavoriteButton from '../components/common/FavoriteButton.vue'
+import { useUserStore } from '../store/userStore'
 
+const userStore = useUserStore()
 const courses = ref([])
 const loading = ref(true)
 const error = ref('')
+const favoriteError = ref('')
+const updatingFavorites = ref(new Set())
 
 const hasCourses = computed(() => courses.value.length > 0)
 
 onMounted(async () => {
   try {
-    const response = await fetch('/api/courses')
+    const response = await fetch('/api/courses', {
+      credentials: 'include'
+    })
 
     if (!response.ok) {
       throw new Error('Unable to load courses')
@@ -25,6 +32,51 @@ onMounted(async () => {
     loading.value = false
   }
 })
+
+const isUpdatingFavorite = (courseId) => updatingFavorites.value.has(courseId)
+
+const setCourseFavorite = (courseId, hasFavorite) => {
+  courses.value = courses.value.map((course) => (
+    course.id === courseId ? { ...course, has_favorite: hasFavorite } : course
+  ))
+}
+
+const toggleFavorite = async (course) => {
+  if (!userStore.isStudent || isUpdatingFavorite(course.id)) {
+    return
+  }
+
+  favoriteError.value = ''
+  updatingFavorites.value = new Set([...updatingFavorites.value, course.id])
+
+  try {
+    const nextState = !course.has_favorite
+    const response = await fetch(`/api/users/${userStore.userId}/favorites`, {
+      method: nextState ? 'POST' : 'DELETE',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        entity_type: 'course',
+        entity_id: course.id
+      })
+    })
+    const payload = await response.json()
+
+    if (!response.ok) {
+      throw new Error(payload.message || 'Unable to update favorite')
+    }
+
+    setCourseFavorite(course.id, nextState)
+  } catch (err) {
+    favoriteError.value = 'Favorite could not be updated. Please try again.'
+  } finally {
+    const nextUpdating = new Set(updatingFavorites.value)
+    nextUpdating.delete(course.id)
+    updatingFavorites.value = nextUpdating
+  }
+}
 </script>
 
 <template>
@@ -62,10 +114,22 @@ onMounted(async () => {
     </div>
 
     <div v-else class="row g-4">
+      <div v-if="favoriteError" class="col-12">
+        <div class="alert alert-warning mb-0" role="alert">{{ favoriteError }}</div>
+      </div>
+
       <div v-for="course in courses" :key="course.id" class="col-12 col-md-6 col-xl-4">
         <BaseCard>
           <template #header>
-            <span class="badge rounded-pill text-bg-light border">{{ course.department }}</span>
+            <div class="d-flex justify-content-between gap-3 align-items-center">
+              <span class="badge rounded-pill text-bg-light border">{{ course.department }}</span>
+              <FavoriteButton
+                v-if="userStore.isStudent"
+                :active="course.has_favorite"
+                :disabled="isUpdatingFavorite(course.id)"
+                @toggle="toggleFavorite(course)"
+              />
+            </div>
           </template>
 
           <h2 class="h4 mb-3">{{ course.title }}</h2>

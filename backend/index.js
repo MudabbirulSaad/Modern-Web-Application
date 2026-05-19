@@ -86,11 +86,37 @@ const readCoursePayload = (body) => ({
   )]
 });
 
-const selectCourseById = async (conn, courseId) => {
-  const courseRows = await conn.query(
-    'SELECT id, title, department, description, created_at, updated_at FROM Courses WHERE id = ? LIMIT 1',
-    [courseId]
-  );
+const selectCourseById = async (conn, courseId, viewerId = null) => {
+  const hasViewer = Number.isInteger(Number(viewerId)) && Number(viewerId) > 0;
+  const favoriteSelect = hasViewer
+    ? ', CASE WHEN f.id IS NULL THEN 0 ELSE 1 END AS has_favorite'
+    : '';
+  const favoriteJoin = hasViewer
+    ? 'LEFT JOIN Favorites f ON f.entity_type = "course" AND f.entity_id = c.id AND f.user_id = ?'
+    : '';
+  const params = hasViewer ? [Number(viewerId), courseId] : [courseId];
+  const courseRows = hasViewer
+    ? await conn.query(
+      `
+      SELECT
+        c.id,
+        c.title,
+        c.department,
+        c.description,
+        c.created_at,
+        c.updated_at
+        ${favoriteSelect}
+      FROM Courses c
+      ${favoriteJoin}
+      WHERE c.id = ?
+      LIMIT 1
+      `,
+      params
+    )
+    : await conn.query(
+      'SELECT id, title, department, description, created_at, updated_at FROM Courses WHERE id = ? LIMIT 1',
+      [courseId]
+    );
 
   if (courseRows.length === 0) {
     return null;
@@ -111,7 +137,7 @@ const selectCourseById = async (conn, courseId) => {
     [courseId]
   );
 
-  return { ...courseRows[0], tutors: tutorRows };
+  return { ...normalizeFavoriteFields(courseRows[0]), tutors: tutorRows };
 };
 
 const insertCourseTutors = async (conn, courseId, tutorIds) => {
@@ -143,6 +169,11 @@ const readReviewPayload = (body) => ({
   comment: sanitizeReviewComment(body.comment)
 });
 
+const readFavoritePayload = (body) => ({
+  entityType: String(body.entity_type || '').trim().toLowerCase(),
+  entityId: Number(body.entity_id)
+});
+
 const normalizeReview = (review) => {
   if (!review) {
     return null;
@@ -156,6 +187,44 @@ const normalizeReview = (review) => {
   }
 
   return review;
+};
+
+const normalizeFavoriteFields = (row) => {
+  if (!row) {
+    return null;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(row, 'has_favorite')) {
+    return {
+      ...row,
+      has_favorite: Boolean(Number(row.has_favorite))
+    };
+  }
+
+  return row;
+};
+
+const validateFavoriteRequest = (req, res) => {
+  const requestedUserId = Number(req.params.id);
+
+  if (!Number.isInteger(requestedUserId) || requestedUserId <= 0) {
+    res.status(400).json({ status: 'error', message: 'Valid user id is required' });
+    return null;
+  }
+
+  if (requestedUserId !== Number(req.user.id)) {
+    res.status(403).json({ status: 'error', message: 'Cannot manage favorites for another user' });
+    return null;
+  }
+
+  const { entityType, entityId } = readFavoritePayload(req.body);
+
+  if (!['tutor', 'course'].includes(entityType) || !Number.isInteger(entityId) || entityId <= 0) {
+    res.status(400).json({ status: 'error', message: 'Valid entity_type and entity_id are required' });
+    return null;
+  }
+
+  return { userId: requestedUserId, entityType, entityId };
 };
 
 const selectReviewById = async (conn, reviewId, viewerId = null) => {
@@ -190,6 +259,15 @@ const selectReviewById = async (conn, reviewId, viewerId = null) => {
   );
 
   return normalizeReview(rows[0] || null);
+};
+
+const selectFavoriteById = async (conn, favoriteId) => {
+  const rows = await conn.query(
+    'SELECT id, user_id, entity_type, entity_id FROM Favorites WHERE id = ? LIMIT 1',
+    [favoriteId]
+  );
+
+  return rows[0] || null;
 };
 
 app.get('/api/health', (req, res) => {
@@ -539,14 +617,87 @@ app.post('/api/reviews/:id/upvote', requireStudent, async (req, res) => {
   }
 });
 
-app.get('/api/tutors', async (req, res) => {
+app.post('/api/users/:id/favorites', requireStudent, async (req, res) => {
+  const favoriteRequest = validateFavoriteRequest(req, res);
+
+  if (!favoriteRequest) {
+    return;
+  }
+
+  const { userId, entityType, entityId } = favoriteRequest;
+
   let conn;
   try {
     conn = await pool.getConnection();
-    const rows = await conn.query(
-      'SELECT id, name, department, bio, created_at, updated_at FROM Tutors ORDER BY name ASC'
+    const result = await conn.query(
+      'INSERT INTO Favorites (user_id, entity_type, entity_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)',
+      [userId, entityType, entityId]
     );
-    res.json({ status: 'ok', data: rows });
+    const favorite = await selectFavoriteById(conn, Number(result.insertId));
+
+    res.status(201).json({ status: 'ok', data: favorite });
+  } catch (err) {
+    console.error('Favorite create error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to save favorite' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.delete('/api/users/:id/favorites', requireStudent, async (req, res) => {
+  const favoriteRequest = validateFavoriteRequest(req, res);
+
+  if (!favoriteRequest) {
+    return;
+  }
+
+  const { userId, entityType, entityId } = favoriteRequest;
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    await conn.query(
+      'DELETE FROM Favorites WHERE user_id = ? AND entity_type = ? AND entity_id = ?',
+      [userId, entityType, entityId]
+    );
+
+    res.json({ status: 'ok', message: 'Favorite removed' });
+  } catch (err) {
+    console.error('Favorite delete error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to remove favorite' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.get('/api/tutors', async (req, res) => {
+  const viewer = decodeAuthCookie(req);
+  const isStudent = viewer?.role === 'student';
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const rows = isStudent
+      ? await conn.query(
+        `
+      SELECT
+        t.id,
+        t.name,
+        t.department,
+        t.bio,
+        t.created_at,
+        t.updated_at,
+        CASE WHEN f.id IS NULL THEN 0 ELSE 1 END AS has_favorite
+      FROM Tutors t
+      LEFT JOIN Favorites f ON f.entity_type = "tutor" AND f.entity_id = t.id AND f.user_id = ?
+      ORDER BY t.name ASC
+      `,
+        [Number(viewer.id)]
+      )
+      : await conn.query(
+        'SELECT id, name, department, bio, created_at, updated_at FROM Tutors ORDER BY name ASC'
+      );
+    res.json({ status: 'ok', data: rows.map(normalizeFavoriteFields) });
   } catch (err) {
     console.error('Tutors query error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to fetch tutors' });
@@ -556,20 +707,41 @@ app.get('/api/tutors', async (req, res) => {
 });
 
 app.get('/api/tutors/:id', async (req, res) => {
+  const viewer = decodeAuthCookie(req);
+  const isStudent = viewer?.role === 'student';
+
   let conn;
   try {
     conn = await pool.getConnection();
-    const rows = await conn.query(
-      'SELECT id, name, department, bio, created_at, updated_at FROM Tutors WHERE id = ? LIMIT 1',
-      [req.params.id]
-    );
+    const rows = isStudent
+      ? await conn.query(
+        `
+      SELECT
+        t.id,
+        t.name,
+        t.department,
+        t.bio,
+        t.created_at,
+        t.updated_at,
+        CASE WHEN f.id IS NULL THEN 0 ELSE 1 END AS has_favorite
+      FROM Tutors t
+      LEFT JOIN Favorites f ON f.entity_type = "tutor" AND f.entity_id = t.id AND f.user_id = ?
+      WHERE t.id = ?
+      LIMIT 1
+      `,
+        [Number(viewer.id), req.params.id]
+      )
+      : await conn.query(
+        'SELECT id, name, department, bio, created_at, updated_at FROM Tutors WHERE id = ? LIMIT 1',
+        [req.params.id]
+      );
 
     if (rows.length === 0) {
       res.status(404).json({ status: 'error', message: 'Tutor not found' });
       return;
     }
 
-    res.json({ status: 'ok', data: rows[0] });
+    res.json({ status: 'ok', data: normalizeFavoriteFields(rows[0]) });
   } catch (err) {
     console.error('Tutor detail query error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to fetch tutor' });
@@ -666,10 +838,32 @@ app.delete('/api/tutors/:id', requireAdmin, async (req, res) => {
 });
 
 app.get('/api/courses', async (req, res) => {
+  const viewer = decodeAuthCookie(req);
+  const isStudent = viewer?.role === 'student';
+
   let conn;
   try {
     conn = await pool.getConnection();
-    const rows = await conn.query(`
+    const rows = isStudent
+      ? await conn.query(`
+      SELECT
+        c.id,
+        c.title,
+        c.department,
+        c.description,
+        c.created_at,
+        c.updated_at,
+        COALESCE(GROUP_CONCAT(t.id ORDER BY t.name SEPARATOR ','), '') AS tutor_ids,
+        COALESCE(GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ', '), '') AS tutor_names,
+        CASE WHEN f.id IS NULL THEN 0 ELSE 1 END AS has_favorite
+      FROM Courses c
+      LEFT JOIN Course_Tutors ct ON ct.course_id = c.id
+      LEFT JOIN Tutors t ON t.id = ct.tutor_id
+      LEFT JOIN Favorites f ON f.entity_type = "course" AND f.entity_id = c.id AND f.user_id = ?
+      GROUP BY c.id, c.title, c.department, c.description, c.created_at, c.updated_at, f.id
+      ORDER BY c.title ASC
+    `, [Number(viewer.id)])
+      : await conn.query(`
       SELECT
         c.id,
         c.title,
@@ -685,7 +879,7 @@ app.get('/api/courses', async (req, res) => {
       GROUP BY c.id, c.title, c.department, c.description, c.created_at, c.updated_at
       ORDER BY c.title ASC
     `);
-    res.json({ status: 'ok', data: rows });
+    res.json({ status: 'ok', data: rows.map(normalizeFavoriteFields) });
   } catch (err) {
     console.error('Courses query error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to fetch courses' });
@@ -695,10 +889,13 @@ app.get('/api/courses', async (req, res) => {
 });
 
 app.get('/api/courses/:id', async (req, res) => {
+  const viewer = decodeAuthCookie(req);
+  const isStudent = viewer?.role === 'student';
+
   let conn;
   try {
     conn = await pool.getConnection();
-    const course = await selectCourseById(conn, req.params.id);
+    const course = await selectCourseById(conn, req.params.id, isStudent ? Number(viewer.id) : null);
 
     if (!course) {
       res.status(404).json({ status: 'error', message: 'Course not found' });
