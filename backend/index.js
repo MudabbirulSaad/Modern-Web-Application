@@ -345,6 +345,11 @@ const readFavoritePayload = (body) => ({
   entityId: Number(body.entity_id)
 });
 
+const readDesiredFavoritePayload = (body) => ({
+  ...readFavoritePayload(body),
+  favorite: body.favorite
+});
+
 const normalizeReview = (review) => {
   if (!review) {
     return null;
@@ -396,6 +401,22 @@ const validateFavoriteRequest = (req, res) => {
   }
 
   return { userId: requestedUserId, entityType, entityId };
+};
+
+const validateDesiredFavoriteRequest = (req, res) => {
+  const { entityType, entityId, favorite } = readDesiredFavoritePayload(req.body);
+
+  if (
+    !['tutor', 'course'].includes(entityType)
+    || !Number.isInteger(entityId)
+    || entityId <= 0
+    || typeof favorite !== 'boolean'
+  ) {
+    res.status(400).json({ status: 'error', message: 'Valid entity_type, entity_id, and favorite state are required' });
+    return null;
+  }
+
+  return { userId: Number(req.user.id), entityType, entityId, favorite };
 };
 
 const validateDashboardUserRequest = (req, res) => {
@@ -455,6 +476,55 @@ const selectFavoriteById = async (conn, favoriteId) => {
   );
 
   return rows[0] || null;
+};
+
+const selectFavoriteTarget = async (conn, entityType, entityId, userId) => {
+  if (entityType === 'tutor') {
+    const rows = await conn.query(
+      `
+      SELECT
+        t.id,
+        t.name,
+        t.department,
+        t.bio,
+        t.created_at,
+        t.updated_at,
+        CASE WHEN f.id IS NULL THEN 0 ELSE 1 END AS has_favorite
+      FROM Tutors t
+      LEFT JOIN Favorites f ON f.entity_type = "tutor" AND f.entity_id = t.id AND f.user_id = ?
+      WHERE t.id = ?
+      LIMIT 1
+      `,
+      [userId, entityId]
+    );
+
+    return rows[0] ? { ...normalizeFavoriteFields(rows[0]), entity_type: entityType } : null;
+  }
+
+  const rows = await conn.query(
+    `
+      SELECT
+        c.id,
+        c.title,
+        c.department,
+        c.description,
+        c.created_at,
+        c.updated_at,
+        COALESCE(GROUP_CONCAT(t.id ORDER BY t.name SEPARATOR ','), '') AS tutor_ids,
+        COALESCE(GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ', '), '') AS tutor_names,
+        CASE WHEN f.id IS NULL THEN 0 ELSE 1 END AS has_favorite
+      FROM Courses c
+      LEFT JOIN Course_Tutors ct ON ct.course_id = c.id
+      LEFT JOIN Tutors t ON t.id = ct.tutor_id
+      LEFT JOIN Favorites f ON f.entity_type = "course" AND f.entity_id = c.id AND f.user_id = ?
+      WHERE c.id = ?
+      GROUP BY c.id, c.title, c.department, c.description, c.created_at, c.updated_at, f.id
+      LIMIT 1
+      `,
+    [userId, entityId]
+  );
+
+  return rows[0] ? { ...normalizeFavoriteFields(rows[0]), entity_type: entityType } : null;
 };
 
 app.get('/api/health', (req, res) => {
@@ -1014,6 +1084,47 @@ app.delete('/api/users/:id/favorites', requireStudent, async (req, res) => {
   } catch (err) {
     console.error('Favorite delete error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to remove favorite' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.put('/api/me/favorite', requireStudent, async (req, res) => {
+  const favoriteRequest = validateDesiredFavoriteRequest(req, res);
+
+  if (!favoriteRequest) {
+    return;
+  }
+
+  const { userId, entityType, entityId, favorite } = favoriteRequest;
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const target = await selectFavoriteTarget(conn, entityType, entityId, userId);
+
+    if (!target) {
+      res.status(404).json({ status: 'error', message: 'Favorite target not found' });
+      return;
+    }
+
+    if (favorite) {
+      await conn.query(
+        'INSERT INTO Favorites (user_id, entity_type, entity_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE id = id',
+        [userId, entityType, entityId]
+      );
+    } else {
+      await conn.query(
+        'DELETE FROM Favorites WHERE user_id = ? AND entity_type = ? AND entity_id = ?',
+        [userId, entityType, entityId]
+      );
+    }
+
+    const updatedTarget = await selectFavoriteTarget(conn, entityType, entityId, userId);
+    res.json({ status: 'ok', data: updatedTarget });
+  } catch (err) {
+    console.error('Favorite desired-state error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to update favorite' });
   } finally {
     if (conn) conn.release();
   }

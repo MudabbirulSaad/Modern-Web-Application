@@ -124,15 +124,16 @@ const toggleFavorite = async (tutor) => {
 
   try {
     const nextState = !tutor.has_favorite
-    const response = await fetch(`/api/users/${userStore.userId}/favorites`, {
-      method: nextState ? 'POST' : 'DELETE',
+    const response = await fetch('/api/me/favorite', {
+      method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
       },
       credentials: 'include',
       body: JSON.stringify({
         entity_type: 'tutor',
-        entity_id: tutor.id
+        entity_id: tutor.id,
+        favorite: nextState
       })
     })
     const payload = await response.json()
@@ -141,7 +142,7 @@ const toggleFavorite = async (tutor) => {
       throw new Error(payload.message || 'Unable to update favorite')
     }
 
-    setTutorFavorite(tutor.id, nextState)
+    setTutorFavorite(tutor.id, payload.data?.has_favorite ?? nextState)
   } catch (err) {
     favoriteError.value = 'Favorite could not be updated. Please try again.'
   } finally {

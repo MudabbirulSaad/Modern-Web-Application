@@ -1962,4 +1962,266 @@ describe('Favorite endpoints', () => {
     expect(res.statusCode).toEqual(403);
     expect(res.body).toEqual({ status: 'error', message: 'Student access required' });
   });
+
+  it('should reject desired-state favorite updates without authentication', async () => {
+    const res = await request(app)
+      .put('/api/me/favorite')
+      .send({
+        entity_type: 'course',
+        entity_id: 2,
+        favorite: true
+      });
+
+    expect(res.statusCode).toEqual(401);
+    expect(res.body).toEqual({ status: 'error', message: 'Authentication required' });
+  });
+
+  it('should reject desired-state favorite updates with invalid payloads', async () => {
+    const res = await request(app)
+      .put('/api/me/favorite')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'course',
+        entity_id: 2,
+        favorite: 'true'
+      });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'Valid entity_type, entity_id, and favorite state are required' });
+  });
+
+  it('should reject desired-state favorite updates for invalid target kinds', async () => {
+    const res = await request(app)
+      .put('/api/me/favorite')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'program',
+        entity_id: 2,
+        favorite: true
+      });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'Valid entity_type, entity_id, and favorite state are required' });
+  });
+
+  it('should reject desired-state favorite updates for missing targets', async () => {
+    const mockConn = {
+      query: jest.fn().mockResolvedValueOnce([]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/me/favorite')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'tutor',
+        entity_id: 999,
+        favorite: true
+      });
+
+    expect(res.statusCode).toEqual(404);
+    expect(res.body).toEqual({ status: 'error', message: 'Favorite target not found' });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      expect.stringContaining('FROM Tutors t'),
+      [7, 999]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should idempotently add a desired-state favorite for the authenticated student', async () => {
+    const target = {
+      id: 2,
+      title: 'COS20031 Database Design',
+      department: 'Information Systems',
+      description: 'Model relational data.',
+      created_at: '2026-05-18T00:00:00.000Z',
+      updated_at: '2026-05-18T00:00:00.000Z',
+      tutor_ids: '2',
+      tutor_names: 'Prof Liam Patel',
+      has_favorite: 0
+    };
+    const updatedTarget = { ...target, has_favorite: 1 };
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([target])
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce([updatedTarget]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/me/favorite')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'course',
+        entity_id: 2,
+        favorite: true
+      });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: {
+        ...updatedTarget,
+        entity_type: 'course',
+        has_favorite: true
+      }
+    });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      'INSERT INTO Favorites (user_id, entity_type, entity_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE id = id',
+      [7, 'course', 2]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should not create duplicate favorites when desired-state add is repeated', async () => {
+    const target = {
+      id: 4,
+      name: 'Dr Nina Park',
+      department: 'Computer Science',
+      bio: 'Teaches programming.',
+      created_at: '2026-05-18T00:00:00.000Z',
+      updated_at: '2026-05-18T00:00:00.000Z',
+      has_favorite: 1
+    };
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([target])
+        .mockResolvedValueOnce({ affectedRows: 0 })
+        .mockResolvedValueOnce([target]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/me/favorite')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'tutor',
+        entity_id: 4,
+        favorite: true
+      });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: {
+        ...target,
+        entity_type: 'tutor',
+        has_favorite: true
+      }
+    });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      'INSERT INTO Favorites (user_id, entity_type, entity_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE id = id',
+      [7, 'tutor', 4]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should idempotently remove a desired-state favorite for the authenticated student', async () => {
+    const target = {
+      id: 2,
+      name: 'Prof Liam Patel',
+      department: 'Information Systems',
+      bio: 'Teaches database design.',
+      created_at: '2026-05-18T00:00:00.000Z',
+      updated_at: '2026-05-18T00:00:00.000Z',
+      has_favorite: 1
+    };
+    const updatedTarget = { ...target, has_favorite: 0 };
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([target])
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce([updatedTarget]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/me/favorite')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'tutor',
+        entity_id: 2,
+        favorite: false
+      });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: {
+        ...updatedTarget,
+        entity_type: 'tutor',
+        has_favorite: false
+      }
+    });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      'DELETE FROM Favorites WHERE user_id = ? AND entity_type = ? AND entity_id = ?',
+      [7, 'tutor', 2]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should keep repeated desired-state favorite removals as successful no-ops', async () => {
+    const target = {
+      id: 2,
+      title: 'COS20031 Database Design',
+      department: 'Information Systems',
+      description: 'Model relational data.',
+      created_at: '2026-05-18T00:00:00.000Z',
+      updated_at: '2026-05-18T00:00:00.000Z',
+      tutor_ids: '2',
+      tutor_names: 'Prof Liam Patel',
+      has_favorite: 0
+    };
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([target])
+        .mockResolvedValueOnce({ affectedRows: 0 })
+        .mockResolvedValueOnce([target]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/me/favorite')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'course',
+        entity_id: 2,
+        favorite: false
+      });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: {
+        ...target,
+        entity_type: 'course',
+        has_favorite: false
+      }
+    });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      'DELETE FROM Favorites WHERE user_id = ? AND entity_type = ? AND entity_id = ?',
+      [7, 'course', 2]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
 });
