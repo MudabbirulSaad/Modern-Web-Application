@@ -23,7 +23,7 @@ const favoriteSyncStore = useFavoriteSyncStore()
 
 configureApiClient({
   onUnauthorized: () => {
-    userStore.invalidateSession()
+    return userStore.invalidateSession()
   }
 })
 

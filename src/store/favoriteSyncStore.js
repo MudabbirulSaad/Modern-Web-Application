@@ -70,9 +70,15 @@ const mergeCachedEntity = async (viewerScope, action, entity) => {
 export const useFavoriteSyncStore = defineStore('favoriteSync', {
   state: () => ({
     pendingFavoriteKeys: [],
-    replaying: false
+    replaying: false,
+    replayGeneration: 0
   }),
   actions: {
+    stopPendingFavoriteReplay() {
+      this.replayGeneration += 1
+      this.replaying = false
+      this.pendingFavoriteKeys = []
+    },
     getStudentViewerScope() {
       const userStore = useUserStore()
 
@@ -201,11 +207,12 @@ export const useFavoriteSyncStore = defineStore('favoriteSync', {
       }
 
       this.replaying = true
+      const replayGeneration = this.replayGeneration
 
       try {
         let records = await this.refreshPendingFavorites()
 
-        while (records.length > 0) {
+        while (records.length > 0 && this.replayGeneration === replayGeneration) {
           const record = records[0]
           const action = record.data
 
@@ -227,6 +234,10 @@ export const useFavoriteSyncStore = defineStore('favoriteSync', {
             })
             const latestRecords = await getPendingLocalActions(viewerScope)
             const latestRecord = latestRecords.find((item) => item.key === record.key)
+
+            if (this.replayGeneration !== replayGeneration) {
+              break
+            }
 
             if (latestRecord?.data?.desiredFavorite !== action.desiredFavorite) {
               records = await this.refreshPendingFavorites()
@@ -250,7 +261,9 @@ export const useFavoriteSyncStore = defineStore('favoriteSync', {
           }
         }
       } finally {
-        this.replaying = false
+        if (this.replayGeneration === replayGeneration) {
+          this.replaying = false
+        }
       }
     }
   }

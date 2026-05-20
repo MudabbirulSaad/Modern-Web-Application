@@ -74,6 +74,26 @@ export const useCourseStore = defineStore('courses', {
     )
   },
   actions: {
+    resetForGuestScope() {
+      const nextState = createInitialState()
+
+      this.coursesById = nextState.coursesById
+      this.activeCourseIds = nextState.activeCourseIds
+      this.loading = nextState.loading
+      this.refreshing = nextState.refreshing
+      this.error = nextState.error
+      this.staleMessage = nextState.staleMessage
+      this.isStale = nextState.isStale
+      this.favoriteError = nextState.favoriteError
+      this.updatingFavoriteIds = nextState.updatingFavoriteIds
+      this.viewerScope = nextState.viewerScope
+      this.searchQuery = nextState.searchQuery
+      this.departmentFilter = nextState.departmentFilter
+      this.sortOrder = nextState.sortOrder
+      this.availableDepartments = nextState.availableDepartments
+      this.currentPage = nextState.currentPage
+      this.totalCourses = nextState.totalCourses
+    },
     getViewerScope() {
       const userStore = useUserStore()
 

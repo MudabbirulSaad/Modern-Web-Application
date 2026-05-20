@@ -74,6 +74,26 @@ export const useTutorStore = defineStore('tutors', {
     )
   },
   actions: {
+    resetForGuestScope() {
+      const nextState = createInitialState()
+
+      this.tutorsById = nextState.tutorsById
+      this.activeTutorIds = nextState.activeTutorIds
+      this.loading = nextState.loading
+      this.refreshing = nextState.refreshing
+      this.error = nextState.error
+      this.staleMessage = nextState.staleMessage
+      this.isStale = nextState.isStale
+      this.favoriteError = nextState.favoriteError
+      this.updatingFavoriteIds = nextState.updatingFavoriteIds
+      this.viewerScope = nextState.viewerScope
+      this.searchQuery = nextState.searchQuery
+      this.departmentFilter = nextState.departmentFilter
+      this.sortOrder = nextState.sortOrder
+      this.availableDepartments = nextState.availableDepartments
+      this.currentPage = nextState.currentPage
+      this.totalTutors = nextState.totalTutors
+    },
     getViewerScope() {
       const userStore = useUserStore()
 

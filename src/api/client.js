@@ -58,7 +58,7 @@ export const apiRequest = async (url, options = {}) => {
     const message = payload?.message || 'Request failed'
 
     if (response.status === 401) {
-      unauthorizedHandler?.()
+      await unauthorizedHandler?.()
     }
 
     throw new ApiError(message, {

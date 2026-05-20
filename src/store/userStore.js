@@ -1,5 +1,10 @@
 import { defineStore } from 'pinia'
 import { apiRequest } from '../api/client'
+import { getStudentViewerScope, purgeViewerScope } from '../api/localCache'
+import { useCourseStore } from './courseStore'
+import { useFavoriteSyncStore } from './favoriteSyncStore'
+import { useReviewStore } from './reviewStore'
+import { useTutorStore } from './tutorStore'
 
 let sessionRequest = null
 const themeModes = ['light', 'dark', 'auto']
@@ -33,9 +38,27 @@ export const useUserStore = defineStore('user', {
       this.role = null
       this.loggedIn = false
     },
-    invalidateSession() {
+    async resetAuthenticatedState() {
+      const studentScope = this.role === 'student' && this.userId
+        ? getStudentViewerScope(this.userId)
+        : null
+      const favoriteSyncStore = useFavoriteSyncStore()
+      const reviewStore = useReviewStore()
+
+      favoriteSyncStore.stopPendingFavoriteReplay()
+      reviewStore.stopPendingReviewUpvoteReplay()
       this.clearUser()
       this.sessionInitialized = true
+      useCourseStore().resetForGuestScope()
+      useTutorStore().resetForGuestScope()
+      reviewStore.resetForGuestScope()
+
+      if (studentScope) {
+        await purgeViewerScope(studentScope)
+      }
+    },
+    async invalidateSession() {
+      await this.resetAuthenticatedState()
     },
     async initializeSession() {
       if (this.sessionInitialized) {
@@ -105,7 +128,7 @@ export const useUserStore = defineStore('user', {
           method: 'POST'
         })
 
-        this.invalidateSession()
+        await this.resetAuthenticatedState()
       } catch (err) {
         this.error = err.message || 'Unable to log out'
         throw err

@@ -39,6 +39,7 @@ const createInitialState = () => ({
   upvotingId: null,
   pendingReviewUpvoteKeys: [],
   replayingReviewUpvotes: false,
+  replayGeneration: 0,
   viewerScope: GUEST_VIEWER_SCOPE,
   activeTargetKey: '',
   activeEntityType: '',
@@ -104,6 +105,34 @@ export const useReviewStore = defineStore('reviews', {
     }
   },
   actions: {
+    stopPendingReviewUpvoteReplay() {
+      this.replayGeneration += 1
+      this.replayingReviewUpvotes = false
+      this.pendingReviewUpvoteKeys = []
+    },
+    resetForGuestScope() {
+      const nextState = createInitialState()
+
+      this.reviewsById = nextState.reviewsById
+      this.activeReviewIds = nextState.activeReviewIds
+      this.loading = nextState.loading
+      this.refreshing = nextState.refreshing
+      this.error = nextState.error
+      this.staleMessage = nextState.staleMessage
+      this.isStale = nextState.isStale
+      this.submitError = nextState.submitError
+      this.actionError = nextState.actionError
+      this.submitting = nextState.submitting
+      this.updating = nextState.updating
+      this.deletingId = nextState.deletingId
+      this.upvotingId = nextState.upvotingId
+      this.pendingReviewUpvoteKeys = nextState.pendingReviewUpvoteKeys
+      this.replayingReviewUpvotes = nextState.replayingReviewUpvotes
+      this.viewerScope = nextState.viewerScope
+      this.activeTargetKey = nextState.activeTargetKey
+      this.activeEntityType = nextState.activeEntityType
+      this.activeEntityId = nextState.activeEntityId
+    },
     getViewerScope() {
       const userStore = useUserStore()
 
@@ -504,11 +533,12 @@ export const useReviewStore = defineStore('reviews', {
       }
 
       this.replayingReviewUpvotes = true
+      const replayGeneration = this.replayGeneration
 
       try {
         let records = await this.refreshPendingReviewUpvotes()
 
-        while (records.length > 0) {
+        while (records.length > 0 && this.replayGeneration === replayGeneration) {
           const record = records[0]
           const action = record.data
 
@@ -528,6 +558,10 @@ export const useReviewStore = defineStore('reviews', {
             })
             const latestRecords = await getPendingLocalActions(viewerScope)
             const latestRecord = latestRecords.find((item) => item.key === record.key)
+
+            if (this.replayGeneration !== replayGeneration) {
+              break
+            }
 
             if (latestRecord?.data?.desiredUpvoted !== action.desiredUpvoted) {
               records = await this.refreshPendingReviewUpvotes()
@@ -551,7 +585,9 @@ export const useReviewStore = defineStore('reviews', {
           }
         }
       } finally {
-        this.replayingReviewUpvotes = false
+        if (this.replayGeneration === replayGeneration) {
+          this.replayingReviewUpvotes = false
+        }
       }
     }
   }
