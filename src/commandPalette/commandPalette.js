@@ -1,10 +1,30 @@
+import {
+  COURSE_PAGE_LIMIT,
+  COURSE_SORT_OPTIONS,
+  useCourseStore
+} from '../store/courseStore'
+import {
+  TUTOR_PAGE_LIMIT,
+  TUTOR_SORT_OPTIONS,
+  useTutorStore
+} from '../store/tutorStore'
+
 const SUPPORTED_ROUTES = new Map([
   ['/', null],
   ['/courses', 'courses'],
   ['/tutors', 'tutors']
 ])
 
-const ALLOWED_FILTERS = new Set(['search', 'department'])
+const ALLOWED_FILTERS = new Set(['search', 'department', 'sort', 'page', 'limit'])
+const SORT_OPTIONS_BY_DOMAIN = new Map([
+  ['courses', new Set(COURSE_SORT_OPTIONS.map((option) => option.value))],
+  ['tutors', new Set(TUTOR_SORT_OPTIONS.map((option) => option.value))]
+])
+const PAGE_LIMIT_BY_DOMAIN = new Map([
+  ['courses', COURSE_PAGE_LIMIT],
+  ['tutors', TUTOR_PAGE_LIMIT]
+])
+const MINIMUM_COMMAND_CONFIDENCE = 0.5
 const OFFLINE_UNSUPPORTED_MESSAGE = 'Offline command not supported. Try Courses, Tutors, or a simple search.'
 const RATE_LIMIT_MESSAGE = 'Too many smart-navigation requests. Please wait and try again.'
 
@@ -28,24 +48,68 @@ const createRouteCommand = (route, action = 'NAVIGATE', filters = {}) => ({
   reason: 'Command parsed'
 })
 
-const sanitizeFilters = (filters) => {
+const parsePositiveInteger = (value) => {
+  const numberValue = Number(value)
+
+  if (!Number.isInteger(numberValue) || numberValue < 1) {
+    return null
+  }
+
+  return numberValue
+}
+
+const sanitizeFilters = (filters, domain = null) => {
   if (!filters || typeof filters !== 'object' || Array.isArray(filters)) {
     return {}
   }
 
-  return Object.entries(filters).reduce((safeFilters, [key, value]) => {
-    if (!ALLOWED_FILTERS.has(key) || typeof value !== 'string') {
-      return safeFilters
+  const safeFilters = {}
+
+  for (const [key, value] of Object.entries(filters)) {
+    if (!ALLOWED_FILTERS.has(key)) {
+      continue
     }
 
-    const safeValue = cleanText(value)
+    if (['search', 'department'].includes(key)) {
+      if (typeof value !== 'string') {
+        return null
+      }
 
-    if (safeValue) {
+      const safeValue = cleanText(value)
+
+      if (safeValue) {
+        safeFilters[key] = safeValue
+      }
+
+      continue
+    }
+
+    if (key === 'sort') {
+      const safeValue = cleanText(value)
+      const allowedSortOptions = SORT_OPTIONS_BY_DOMAIN.get(domain)
+
+      if (!allowedSortOptions?.has(safeValue)) {
+        return null
+      }
+
       safeFilters[key] = safeValue
+      continue
     }
 
-    return safeFilters
-  }, {})
+    const safeNumber = parsePositiveInteger(value)
+
+    if (!safeNumber) {
+      return null
+    }
+
+    if (key === 'limit' && safeNumber !== PAGE_LIMIT_BY_DOMAIN.get(domain)) {
+      return null
+    }
+
+    safeFilters[key] = safeNumber
+  }
+
+  return safeFilters
 }
 
 export const sanitizeCommand = (command) => {
@@ -70,13 +134,36 @@ export const sanitizeCommand = (command) => {
     return createNoneCommand('Unsupported navigation command')
   }
 
+  const confidence = Number(command.confidence)
+
+  if (!Number.isFinite(confidence) || confidence < MINIMUM_COMMAND_CONFIDENCE) {
+    return createNoneCommand('Unsupported navigation command')
+  }
+
+  const filters = sanitizeFilters(command.filters, domain)
+
+  if (!filters) {
+    return createNoneCommand('Unsupported navigation command')
+  }
+
   return {
     action,
     route,
     domain,
-    filters: sanitizeFilters(command.filters),
-    confidence: Math.max(0, Math.min(Number(command.confidence) || 0, 1)),
+    filters,
+    confidence: Math.max(0, Math.min(confidence, 1)),
     reason: cleanText(command.reason, 160) || 'Navigation command parsed'
+  }
+}
+
+const applyDirectoryFilters = ({ domain, filters }) => {
+  if (domain === 'courses') {
+    useCourseStore().applyDirectoryFilters(filters)
+    return
+  }
+
+  if (domain === 'tutors') {
+    useTutorStore().applyDirectoryFilters(filters)
   }
 }
 
@@ -150,10 +237,11 @@ export const executeSmartNavigationCommand = async (command, router) => {
     }
   }
 
-  await router.push({
-    path: safeCommand.route,
-    query: sanitizeFilters(safeCommand.filters)
-  })
+  if (['FILTER', 'SEARCH'].includes(safeCommand.action)) {
+    applyDirectoryFilters(safeCommand)
+  }
+
+  await router.push({ path: safeCommand.route })
 
   return { executed: true }
 }

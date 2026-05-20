@@ -1,4 +1,5 @@
 import { jest } from '@jest/globals'
+import { createPinia, setActivePinia } from 'pinia'
 import {
   createCommandPaletteController,
   createCommandPaletteShortcutHandler,
@@ -7,6 +8,12 @@ import {
   submitCommandPaletteIntent
 } from './commandPalette.js'
 import { ApiError } from '../api/client.js'
+import { useCourseStore } from '../store/courseStore.js'
+import { useTutorStore } from '../store/tutorStore.js'
+
+beforeEach(() => {
+  setActivePinia(createPinia())
+})
 
 describe('command palette behavior', () => {
   it('opens from Cmd/Ctrl+K and focuses the input', async () => {
@@ -59,27 +66,136 @@ describe('command palette behavior', () => {
       },
       body: JSON.stringify({ intent: 'courses' })
     })
-    expect(router.push).toHaveBeenCalledWith({ path: '/courses', query: {} })
+    expect(router.push).toHaveBeenCalledWith({ path: '/courses' })
     expect(controller.isOpen()).toBe(false)
   })
 
-  it('executes online navigation through the router', async () => {
+  it('applies validated course filters before navigation', async () => {
     const router = { push: jest.fn(async () => {}) }
 
     const result = await executeSmartNavigationCommand({
-      action: 'SEARCH',
-      route: '/tutors',
-      domain: 'tutors',
-      filters: { search: 'Ada', unsafe: 'ignored' },
+      action: 'FILTER',
+      route: '/courses',
+      domain: 'courses',
+      filters: {
+        search: 'Databases',
+        department: 'ICT',
+        sort: 'recently-active',
+        page: 2,
+        limit: 6,
+        unsafe: 'ignored'
+      },
       confidence: 1,
-      reason: 'Search tutors'
+      reason: 'Filter courses'
     }, router)
+    const courseStore = useCourseStore()
 
     expect(result).toEqual({ executed: true })
-    expect(router.push).toHaveBeenCalledWith({
-      path: '/tutors',
-      query: { search: 'Ada' }
+    expect(courseStore.searchQuery).toBe('Databases')
+    expect(courseStore.departmentFilter).toBe('ICT')
+    expect(courseStore.sortOrder).toBe('recently-active')
+    expect(courseStore.currentPage).toBe(2)
+    expect(router.push).toHaveBeenCalledWith({ path: '/courses' })
+  })
+
+  it('applies validated tutor filters before navigation', async () => {
+    const router = { push: jest.fn(async () => {}) }
+
+    const result = await executeSmartNavigationCommand({
+      action: 'FILTER',
+      route: '/tutors',
+      domain: 'tutors',
+      filters: {
+        search: 'Ada',
+        department: 'Computer Science',
+        sort: 'alphabetical',
+        page: '3',
+        limit: 6
+      },
+      confidence: 0.95,
+      reason: 'Filter tutors'
+    }, router)
+    const tutorStore = useTutorStore()
+
+    expect(result).toEqual({ executed: true })
+    expect(tutorStore.searchQuery).toBe('Ada')
+    expect(tutorStore.departmentFilter).toBe('Computer Science')
+    expect(tutorStore.sortOrder).toBe('alphabetical')
+    expect(tutorStore.currentPage).toBe(3)
+    expect(router.push).toHaveBeenCalledWith({ path: '/tutors' })
+  })
+
+  it('rejects invalid filter commands inline without navigating', async () => {
+    const router = { push: jest.fn(async () => {}) }
+
+    const result = await executeSmartNavigationCommand({
+      action: 'FILTER',
+      route: '/courses',
+      domain: 'courses',
+      filters: { sort: 'delete-all', page: 1, limit: 6 },
+      confidence: 1,
+      reason: 'Bad sort'
+    }, router)
+
+    expect(result).toEqual({
+      executed: false,
+      feedback: 'Unsupported navigation command'
     })
+    expect(router.push).not.toHaveBeenCalled()
+  })
+
+  it('rejects uncertain commands, unsupported domains, and mutating actions before router guards run', async () => {
+    const router = { push: jest.fn(async () => {}) }
+
+    await expect(executeSmartNavigationCommand({
+      action: 'FILTER',
+      route: '/tutors',
+      domain: 'tutors',
+      filters: { search: 'Ada' },
+      confidence: 0.3,
+      reason: 'Maybe tutors'
+    }, router)).resolves.toEqual({
+      executed: false,
+      feedback: 'Unsupported navigation command'
+    })
+
+    await expect(executeSmartNavigationCommand({
+      action: 'FILTER',
+      route: '/courses',
+      domain: 'tutors',
+      filters: { search: 'Ada' },
+      confidence: 1,
+      reason: 'Mismatched domain'
+    }, router)).resolves.toEqual({
+      executed: false,
+      feedback: 'Unsupported navigation command'
+    })
+
+    await expect(executeSmartNavigationCommand({
+      action: 'TOGGLE_FAVORITE',
+      route: '/courses',
+      domain: 'courses',
+      filters: { targetId: '1', desiredFavorite: 'true' },
+      confidence: 1,
+      reason: 'Mutate favorite'
+    }, router)).resolves.toEqual({
+      executed: false,
+      feedback: 'Unsupported navigation command'
+    })
+
+    await expect(executeSmartNavigationCommand({
+      action: 'NAVIGATE',
+      route: '/admin',
+      domain: 'admin',
+      filters: {},
+      confidence: 1,
+      reason: 'Admin'
+    }, router)).resolves.toEqual({
+      executed: false,
+      feedback: 'Unsupported navigation command'
+    })
+
+    expect(router.push).not.toHaveBeenCalled()
   })
 
   it('parses simple offline route and search commands', () => {

@@ -259,6 +259,12 @@ export const useCourseStore = defineStore('courses', {
       this.searchQuery = ''
       this.departmentFilter = ''
     },
+    applyDirectoryFilters(filters = {}) {
+      this.searchQuery = filters.search || ''
+      this.departmentFilter = filters.department || ''
+      this.sortOrder = filters.sort || 'best-match'
+      this.currentPage = filters.page || 1
+    },
     setPage(pageNumber) {
       this.currentPage = pageNumber
       return this.loadCourses()
