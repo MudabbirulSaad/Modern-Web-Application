@@ -517,6 +517,54 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+app.get('/api/auth/session', async (req, res) => {
+  const decoded = decodeAuthCookie(req);
+
+  if (!decoded) {
+    res.status(401).json({ status: 'error', message: 'Authentication required' });
+    return;
+  }
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const rows = await conn.query(
+      'SELECT id, username, email, role FROM Users WHERE id = ? LIMIT 1',
+      [Number(decoded.id)]
+    );
+    const user = rows[0];
+
+    if (!user) {
+      res.status(401).json({ status: 'error', message: 'Authentication required' });
+      return;
+    }
+
+    res.json({
+      status: 'ok',
+      data: {
+        id: Number(user.id),
+        username: user.username,
+        email: user.email,
+        role: user.role
+      }
+    });
+  } catch (err) {
+    console.error('Session restore error:', err);
+    res.status(500).json({ status: 'error', message: 'Unable to restore session' });
+  } finally {
+    if (conn) conn.release();
+  }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  res.clearCookie(AUTH_COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production'
+  });
+  res.json({ status: 'ok' });
+});
+
 app.get('/api/reviews', async (req, res) => {
   const entityType = String(req.query.entity_type || '').trim().toLowerCase();
   const entityId = Number(req.query.entity_id);

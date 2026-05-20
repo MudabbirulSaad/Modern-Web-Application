@@ -8,7 +8,7 @@ import Register from '../views/Register.vue'
 import Login from '../views/Login.vue'
 import AdminDashboard from '../views/AdminDashboard.vue'
 import StudentDashboard from '../views/StudentDashboard.vue'
-import { useUserStore } from '../store/userStore'
+import { createAuthGuard } from './authGuard'
 
 const routes = [
   {
@@ -69,26 +69,6 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to) => {
-  if (!to.meta.requiresAdmin && !to.meta.requiresStudent) {
-    return true
-  }
-
-  const userStore = useUserStore()
-
-  if (!userStore.isAuthenticated) {
-    return { name: 'login' }
-  }
-
-  if (to.meta.requiresStudent && !userStore.isStudent) {
-    return { name: 'home' }
-  }
-
-  if (to.meta.requiresAdmin && !userStore.isAdmin) {
-    return { name: 'home' }
-  }
-
-  return true
-})
+router.beforeEach(createAuthGuard())
 
 export default router
