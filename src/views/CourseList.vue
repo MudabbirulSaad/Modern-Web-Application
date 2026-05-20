@@ -3,8 +3,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
 import FavoriteButton from '../components/common/FavoriteButton.vue'
+import PaginationControls from '../components/common/PaginationControls.vue'
 import { useUserStore } from '../store/userStore'
 
+const PAGE_LIMIT = 6
 const userStore = useUserStore()
 const courses = ref([])
 const loading = ref(true)
@@ -14,6 +16,8 @@ const updatingFavorites = ref(new Set())
 const searchQuery = ref('')
 const departmentFilter = ref('')
 const availableDepartments = ref([])
+const currentPage = ref(1)
+const totalCourses = ref(0)
 let searchTimeout = null
 
 const hasCourses = computed(() => courses.value.length > 0)
@@ -41,6 +45,9 @@ const fetchCourses = async () => {
     params.set('department', departmentFilter.value)
   }
 
+  params.set('page', String(currentPage.value))
+  params.set('limit', String(PAGE_LIMIT))
+
   loading.value = true
   error.value = ''
 
@@ -56,6 +63,7 @@ const fetchCourses = async () => {
 
     const payload = await response.json()
     courses.value = payload.data || []
+    totalCourses.value = Number(payload.total || 0)
     updateDepartments(courses.value)
   } catch (err) {
     error.value = 'Courses are unavailable right now. Please try again shortly.'
@@ -74,7 +82,15 @@ const clearFilters = () => {
   departmentFilter.value = ''
 }
 
-watch([searchQuery, departmentFilter], scheduleFetchCourses)
+const setPage = (pageNumber) => {
+  currentPage.value = pageNumber
+  fetchCourses()
+}
+
+watch([searchQuery, departmentFilter], () => {
+  currentPage.value = 1
+  scheduleFetchCourses()
+})
 
 onMounted(fetchCourses)
 
@@ -237,6 +253,14 @@ const toggleFavorite = async (course) => {
         </BaseCard>
       </div>
     </div>
+
+    <PaginationControls
+      v-if="!loading && !error && hasCourses"
+      :page="currentPage"
+      :limit="PAGE_LIMIT"
+      :total="totalCourses"
+      @update:page="setPage"
+    />
   </section>
 </template>
 

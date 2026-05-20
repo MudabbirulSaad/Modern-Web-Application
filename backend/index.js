@@ -91,6 +91,27 @@ const readDirectoryFilters = (query) => ({
   department: String(query.department || '').trim()
 });
 
+const readPagination = (query) => {
+  const hasPage = Object.prototype.hasOwnProperty.call(query, 'page');
+  const hasLimit = Object.prototype.hasOwnProperty.call(query, 'limit');
+
+  if (!hasPage && !hasLimit) {
+    return { page: 1, limit: null, offset: 0, isPaginated: false };
+  }
+
+  const page = Math.max(Number.parseInt(query.page, 10) || 1, 1);
+  const limit = Math.min(Math.max(Number.parseInt(query.limit, 10) || 9, 1), 50);
+
+  return {
+    page,
+    limit,
+    offset: (page - 1) * limit,
+    isPaginated: true
+  };
+};
+
+const readTotalCount = (rows) => Number(rows?.[0]?.total || 0);
+
 const buildTutorFilters = ({ search, department }) => {
   const clauses = [];
   const params = [];
@@ -724,10 +745,17 @@ app.get('/api/tutors', async (req, res) => {
   const viewer = decodeAuthCookie(req);
   const isStudent = viewer?.role === 'student';
   const { whereClause, params } = buildTutorFilters(readDirectoryFilters(req.query));
+  const pagination = readPagination(req.query);
+  const paginationClause = pagination.isPaginated ? ' LIMIT ? OFFSET ?' : '';
+  const paginationParams = pagination.isPaginated ? [pagination.limit, pagination.offset] : [];
 
   let conn;
   try {
     conn = await pool.getConnection();
+    const countRows = params.length > 0
+      ? await conn.query(`SELECT COUNT(*) AS total FROM Tutors${whereClause}`, params)
+      : await conn.query(`SELECT COUNT(*) AS total FROM Tutors${whereClause}`);
+    const total = readTotalCount(countRows);
     let rows;
 
     if (isStudent) {
@@ -744,16 +772,18 @@ app.get('/api/tutors', async (req, res) => {
       LEFT JOIN Favorites f ON f.entity_type = "tutor" AND f.entity_id = t.id AND f.user_id = ?
       ${whereClause}
       ORDER BY t.name ASC
+      ${paginationClause}
       `;
-      rows = await conn.query(sql, [Number(viewer.id), ...params]);
+      rows = await conn.query(sql, [Number(viewer.id), ...params, ...paginationParams]);
     } else {
-      const sql = `SELECT id, name, department, bio, created_at, updated_at FROM Tutors${whereClause} ORDER BY name ASC`;
-      rows = params.length > 0
-        ? await conn.query(sql, params)
+      const sql = `SELECT id, name, department, bio, created_at, updated_at FROM Tutors${whereClause} ORDER BY name ASC${paginationClause}`;
+      const queryParams = [...params, ...paginationParams];
+      rows = queryParams.length > 0
+        ? await conn.query(sql, queryParams)
         : await conn.query(sql);
     }
 
-    res.json({ status: 'ok', data: rows.map(normalizeFavoriteFields) });
+    res.json({ status: 'ok', data: rows.map(normalizeFavoriteFields), total });
   } catch (err) {
     console.error('Tutors query error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to fetch tutors' });
@@ -897,10 +927,17 @@ app.get('/api/courses', async (req, res) => {
   const viewer = decodeAuthCookie(req);
   const isStudent = viewer?.role === 'student';
   const { whereClause, params } = buildCourseFilters(readDirectoryFilters(req.query));
+  const pagination = readPagination(req.query);
+  const paginationClause = pagination.isPaginated ? ' LIMIT ? OFFSET ?' : '';
+  const paginationParams = pagination.isPaginated ? [pagination.limit, pagination.offset] : [];
 
   let conn;
   try {
     conn = await pool.getConnection();
+    const countRows = params.length > 0
+      ? await conn.query(`SELECT COUNT(*) AS total FROM Courses c${whereClause}`, params)
+      : await conn.query(`SELECT COUNT(*) AS total FROM Courses c${whereClause}`);
+    const total = readTotalCount(countRows);
     let rows;
 
     if (isStudent) {
@@ -922,8 +959,9 @@ app.get('/api/courses', async (req, res) => {
       ${whereClause}
       GROUP BY c.id, c.title, c.department, c.description, c.created_at, c.updated_at, f.id
       ORDER BY c.title ASC
+      ${paginationClause}
     `;
-      rows = await conn.query(sql, [Number(viewer.id), ...params]);
+      rows = await conn.query(sql, [Number(viewer.id), ...params, ...paginationParams]);
     } else {
       const sql = `
       SELECT
@@ -941,13 +979,15 @@ app.get('/api/courses', async (req, res) => {
       ${whereClause}
       GROUP BY c.id, c.title, c.department, c.description, c.created_at, c.updated_at
       ORDER BY c.title ASC
+      ${paginationClause}
     `;
-      rows = params.length > 0
-        ? await conn.query(sql, params)
+      const queryParams = [...params, ...paginationParams];
+      rows = queryParams.length > 0
+        ? await conn.query(sql, queryParams)
         : await conn.query(sql);
     }
 
-    res.json({ status: 'ok', data: rows.map(normalizeFavoriteFields) });
+    res.json({ status: 'ok', data: rows.map(normalizeFavoriteFields), total });
   } catch (err) {
     console.error('Courses query error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to fetch courses' });
