@@ -9,6 +9,7 @@ import { configureApiClient } from './api/client'
 import { initializeLocalCache } from './api/localCache'
 import { useOnlineStore } from './store/onlineStore'
 import { useUserStore } from './store/userStore'
+import { useFavoriteSyncStore } from './store/favoriteSyncStore'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -18,6 +19,7 @@ app.use(router)
 
 const userStore = useUserStore()
 const onlineStore = useOnlineStore()
+const favoriteSyncStore = useFavoriteSyncStore()
 
 configureApiClient({
   onUnauthorized: () => {
@@ -26,8 +28,11 @@ configureApiClient({
 })
 
 onlineStore.initialize()
+onlineStore.onReconnect(() => favoriteSyncStore.replayPendingFavorites())
 void initializeLocalCache()
 
 userStore.initializeSession().finally(() => {
+  void favoriteSyncStore.refreshPendingFavorites()
+  void favoriteSyncStore.replayPendingFavorites()
   app.mount('#app')
 })

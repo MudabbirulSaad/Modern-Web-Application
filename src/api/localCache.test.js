@@ -1,5 +1,7 @@
 import {
   canonicalizeDirectoryQueryKey,
+  canonicalizePendingLocalActionKey,
+  deletePendingLocalAction,
   getDirectoryQuery,
   getEntity,
   getPendingLocalActions,
@@ -41,6 +43,14 @@ describe('local cache key canonicalization', () => {
       page: -1,
       limit: 0
     })).toBe('guest|tutors|search=networks|department=ICT|sort=best-match|page=1|limit=1')
+  })
+
+  it('canonicalizes pending favorite action keys from action fields', () => {
+    expect(canonicalizePendingLocalActionKey({
+      type: 'favorite',
+      targetKind: 'Course',
+      targetId: '7'
+    })).toBe('type=favorite|target_kind=course|target_id=7')
   })
 })
 
@@ -142,7 +152,7 @@ describe('local cache student purge', () => {
     })
     await savePendingLocalAction({
       viewerScope: studentScope,
-      action: { id: 'favorite-course-1', type: 'favorite', entityId: 1 }
+      action: { type: 'favorite', targetKind: 'course', targetId: 1, desiredFavorite: true }
     })
 
     await purgeViewerScope(studentScope)
@@ -160,5 +170,55 @@ describe('local cache student purge', () => {
     })).resolves.toMatchObject({
       data: { body: 'Guest-visible review' }
     })
+  })
+})
+
+describe('local cache pending local actions', () => {
+  it('compacts repeated favorite actions for the same scoped target', async () => {
+    const studentScope = getStudentViewerScope(11)
+
+    await savePendingLocalAction({
+      viewerScope: studentScope,
+      action: {
+        type: 'favorite',
+        targetKind: 'course',
+        targetId: 1,
+        desiredFavorite: true
+      }
+    })
+    await savePendingLocalAction({
+      viewerScope: studentScope,
+      action: {
+        type: 'favorite',
+        targetKind: 'course',
+        targetId: 1,
+        desiredFavorite: false
+      }
+    })
+
+    await expect(getPendingLocalActions(studentScope)).resolves.toEqual([
+      expect.objectContaining({
+        key: 'type=favorite|target_kind=course|target_id=1',
+        data: expect.objectContaining({
+          id: 'type=favorite|target_kind=course|target_id=1',
+          desiredFavorite: false
+        })
+      })
+    ])
+  })
+
+  it('deletes a pending action using the helper-built key', async () => {
+    const studentScope = getStudentViewerScope(11)
+    const action = {
+      type: 'favorite',
+      targetKind: 'tutor',
+      targetId: 3,
+      desiredFavorite: true
+    }
+
+    await savePendingLocalAction({ viewerScope: studentScope, action })
+    await deletePendingLocalAction({ viewerScope: studentScope, action })
+
+    await expect(getPendingLocalActions(studentScope)).resolves.toEqual([])
   })
 })

@@ -22,11 +22,11 @@ defineEmits(['toggle'])
     type="button"
     class="btn btn-sm btn-favorite"
     :class="active ? 'btn-favorite-saved' : 'btn-favorite-unsaved'"
-    :disabled="disabled || loading"
+    :disabled="disabled"
     :aria-pressed="active ? 'true' : 'false'"
     :aria-busy="loading ? 'true' : 'false'"
     @click="$emit('toggle')"
   >
-    {{ loading ? 'Updating...' : active ? 'Saved' : 'Favorite' }}
+    {{ loading ? 'Syncing...' : active ? 'Saved' : 'Favorite' }}
   </button>
 </template>

@@ -10,6 +10,7 @@ import {
   saveEntity
 } from '../api/localCache'
 import { useUserStore } from './userStore'
+import { registerFavoriteEntityPatcher, useFavoriteSyncStore } from './favoriteSyncStore'
 
 export const TUTOR_PAGE_LIMIT = 6
 export const TUTOR_SORT_OPTIONS = [
@@ -107,6 +108,21 @@ export const useTutorStore = defineStore('tutors', {
 
       items.forEach((tutor) => {
         nextTutorsById[String(tutor.id)] = tutor
+        registerFavoriteEntityPatcher({
+          targetKind: 'tutor',
+          targetId: tutor.id,
+          patch: (entity) => {
+            const existingTutor = this.tutorsById[String(tutor.id)] || { id: tutor.id }
+
+            this.tutorsById = {
+              ...this.tutorsById,
+              [String(tutor.id)]: {
+                ...existingTutor,
+                ...entity
+              }
+            }
+          }
+        })
       })
 
       this.tutorsById = nextTutorsById
@@ -229,6 +245,7 @@ export const useTutorStore = defineStore('tutors', {
     },
     isUpdatingFavorite(tutorId) {
       return this.updatingFavoriteIds.includes(tutorId)
+        || useFavoriteSyncStore().hasPendingFavorite('tutor', tutorId)
     },
     async setTutorFavorite(tutorId, hasFavorite) {
       const key = String(tutorId)
@@ -254,32 +271,24 @@ export const useTutorStore = defineStore('tutors', {
     async toggleFavorite(tutor) {
       const userStore = useUserStore()
 
-      if (!userStore.isStudent || this.isUpdatingFavorite(tutor.id)) {
+      if (!userStore.isStudent) {
         return
       }
 
       this.favoriteError = ''
-      this.updatingFavoriteIds = [...this.updatingFavoriteIds, tutor.id]
+      const nextState = !tutor.has_favorite
+      await this.setTutorFavorite(tutor.id, nextState)
 
-      try {
-        const nextState = !tutor.has_favorite
-        const payload = await apiRequest('/api/me/favorite', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            entity_type: 'tutor',
-            entity_id: tutor.id,
-            favorite: nextState
-          })
-        })
+      const enqueued = await useFavoriteSyncStore().enqueueFavorite({
+        targetKind: 'tutor',
+        targetId: tutor.id,
+        desiredFavorite: nextState,
+        previousFavorite: tutor.has_favorite,
+        entity: this.tutorsById[String(tutor.id)]
+      })
 
-        await this.setTutorFavorite(tutor.id, payload?.has_favorite ?? nextState)
-      } catch {
+      if (!enqueued) {
         this.favoriteError = 'Favorite could not be updated. Please try again.'
-      } finally {
-        this.updatingFavoriteIds = this.updatingFavoriteIds.filter((id) => id !== tutor.id)
       }
     }
   }

@@ -10,6 +10,7 @@ import {
   saveEntity
 } from '../api/localCache'
 import { useUserStore } from './userStore'
+import { registerFavoriteEntityPatcher, useFavoriteSyncStore } from './favoriteSyncStore'
 
 export const COURSE_PAGE_LIMIT = 6
 export const COURSE_SORT_OPTIONS = [
@@ -107,6 +108,21 @@ export const useCourseStore = defineStore('courses', {
 
       items.forEach((course) => {
         nextCoursesById[String(course.id)] = course
+        registerFavoriteEntityPatcher({
+          targetKind: 'course',
+          targetId: course.id,
+          patch: (entity) => {
+            const existingCourse = this.coursesById[String(course.id)] || { id: course.id }
+
+            this.coursesById = {
+              ...this.coursesById,
+              [String(course.id)]: {
+                ...existingCourse,
+                ...entity
+              }
+            }
+          }
+        })
       })
 
       this.coursesById = nextCoursesById
@@ -229,6 +245,7 @@ export const useCourseStore = defineStore('courses', {
     },
     isUpdatingFavorite(courseId) {
       return this.updatingFavoriteIds.includes(courseId)
+        || useFavoriteSyncStore().hasPendingFavorite('course', courseId)
     },
     async setCourseFavorite(courseId, hasFavorite) {
       const key = String(courseId)
@@ -254,32 +271,24 @@ export const useCourseStore = defineStore('courses', {
     async toggleFavorite(course) {
       const userStore = useUserStore()
 
-      if (!userStore.isStudent || this.isUpdatingFavorite(course.id)) {
+      if (!userStore.isStudent) {
         return
       }
 
       this.favoriteError = ''
-      this.updatingFavoriteIds = [...this.updatingFavoriteIds, course.id]
+      const nextState = !course.has_favorite
+      await this.setCourseFavorite(course.id, nextState)
 
-      try {
-        const nextState = !course.has_favorite
-        const payload = await apiRequest('/api/me/favorite', {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            entity_type: 'course',
-            entity_id: course.id,
-            favorite: nextState
-          })
-        })
+      const enqueued = await useFavoriteSyncStore().enqueueFavorite({
+        targetKind: 'course',
+        targetId: course.id,
+        desiredFavorite: nextState,
+        previousFavorite: course.has_favorite,
+        entity: this.coursesById[String(course.id)]
+      })
 
-        await this.setCourseFavorite(course.id, payload?.has_favorite ?? nextState)
-      } catch {
+      if (!enqueued) {
         this.favoriteError = 'Favorite could not be updated. Please try again.'
-      } finally {
-        this.updatingFavoriteIds = this.updatingFavoriteIds.filter((id) => id !== course.id)
       }
     }
   }

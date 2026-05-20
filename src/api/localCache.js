@@ -195,6 +195,26 @@ const normalizeReviewEntityId = (entityId) => {
   return normalizedEntityId
 }
 
+const normalizePendingActionType = (type) => {
+  const normalizedType = String(type || '').trim().toLowerCase()
+
+  if (normalizedType !== 'favorite') {
+    throw new Error(`Unsupported pending local action type: ${type}`)
+  }
+
+  return normalizedType
+}
+
+const normalizeFavoriteTargetKind = (targetKind) => {
+  const normalizedTargetKind = String(targetKind || '').trim().toLowerCase()
+
+  if (!['course', 'tutor'].includes(normalizedTargetKind)) {
+    throw new Error(`Unsupported favorite target kind: ${targetKind}`)
+  }
+
+  return normalizedTargetKind
+}
+
 const omitStudentReviewMarkersForGuest = (viewerScope, row) => {
   if (viewerScope !== GUEST_VIEWER_SCOPE || !row || !Object.prototype.hasOwnProperty.call(row, 'has_upvoted')) {
     return row
@@ -267,6 +287,29 @@ export const canonicalizeReviewCollectionKey = ({
     'reviews',
     `entity_type=${normalizedEntityType}`,
     `entity_id=${normalizedEntityId}`
+  ].join('|')
+}
+
+export const canonicalizePendingLocalActionKey = ({
+  type,
+  actionType,
+  targetKind,
+  entityType,
+  targetId,
+  entityId
+} = {}) => {
+  const normalizedType = normalizePendingActionType(type || actionType)
+  const normalizedTargetKind = normalizeFavoriteTargetKind(targetKind || entityType)
+  const normalizedTargetId = normalizePositiveInteger(targetId || entityId, 0)
+
+  if (!normalizedTargetId) {
+    throw new Error('Pending favorite action target id is required')
+  }
+
+  return [
+    `type=${normalizedType}`,
+    `target_kind=${normalizedTargetKind}`,
+    `target_id=${normalizedTargetId}`
   ].join('|')
 }
 
@@ -460,7 +503,7 @@ export const savePendingLocalAction = async ({
   action
 }) => {
   const normalizedViewerScope = normalizeViewerScope(viewerScope)
-  const key = String(action?.id || action?.key || `${Date.now()}-${Math.random()}`)
+  const key = canonicalizePendingLocalActionKey(action)
   const record = {
     cacheKey: createCompositeKey(normalizedViewerScope, key),
     viewerScope: normalizedViewerScope,
@@ -473,6 +516,16 @@ export const savePendingLocalAction = async ({
   }
 
   return putRecord('pendingLocalActions', record)
+}
+
+export const deletePendingLocalAction = async ({
+  viewerScope = GUEST_VIEWER_SCOPE,
+  action
+}) => {
+  const normalizedViewerScope = normalizeViewerScope(viewerScope)
+  const key = canonicalizePendingLocalActionKey(action)
+
+  await deleteRecord('pendingLocalActions', createCompositeKey(normalizedViewerScope, key))
 }
 
 export const getPendingLocalActions = async (viewerScope = GUEST_VIEWER_SCOPE) => {

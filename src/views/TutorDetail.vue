@@ -1,19 +1,23 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
 import FavoriteButton from '../components/common/FavoriteButton.vue'
 import ReviewSection from '../components/ReviewSection.vue'
+import { registerFavoriteEntityPatcher, useFavoriteSyncStore } from '../store/favoriteSyncStore'
 import { useUserStore } from '../store/userStore'
 
 const route = useRoute()
 const userStore = useUserStore()
+const favoriteSyncStore = useFavoriteSyncStore()
 const tutor = ref(null)
 const loading = ref(true)
 const error = ref('')
 const favoriteError = ref('')
-const favoriteLoading = ref(false)
 const notFound = ref(false)
+const favoriteLoading = computed(() => (
+  tutor.value ? favoriteSyncStore.hasPendingFavorite('tutor', tutor.value.id) : false
+))
 
 onMounted(async () => {
   try {
@@ -32,6 +36,19 @@ onMounted(async () => {
 
     const payload = await response.json()
     tutor.value = payload.data || null
+
+    if (tutor.value) {
+      registerFavoriteEntityPatcher({
+        targetKind: 'tutor',
+        targetId: tutor.value.id,
+        patch: (entity) => {
+          tutor.value = {
+            ...tutor.value,
+            ...entity
+          }
+        }
+      })
+    }
   } catch (err) {
     error.value = 'Tutor details are unavailable right now. Please try again shortly.'
   } finally {
@@ -40,38 +57,25 @@ onMounted(async () => {
 })
 
 const toggleFavorite = async () => {
-  if (!userStore.isStudent || !tutor.value || favoriteLoading.value) {
+  if (!userStore.isStudent || !tutor.value) {
     return
   }
 
   favoriteError.value = ''
-  favoriteLoading.value = true
+  const previousFavorite = Boolean(tutor.value.has_favorite)
+  const desiredFavorite = !previousFavorite
+  tutor.value = { ...tutor.value, has_favorite: desiredFavorite }
 
-  try {
-    const nextState = !tutor.value.has_favorite
-    const response = await fetch('/api/me/favorite', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        entity_type: 'tutor',
-        entity_id: tutor.value.id,
-        favorite: nextState
-      })
-    })
-    const payload = await response.json()
+  const enqueued = await favoriteSyncStore.enqueueFavorite({
+    targetKind: 'tutor',
+    targetId: tutor.value.id,
+    desiredFavorite,
+    previousFavorite,
+    entity: tutor.value
+  })
 
-    if (!response.ok) {
-      throw new Error(payload.message || 'Unable to update favorite')
-    }
-
-    tutor.value = { ...tutor.value, has_favorite: payload.data?.has_favorite ?? nextState }
-  } catch (err) {
+  if (!enqueued) {
     favoriteError.value = 'Favorite could not be updated. Please try again.'
-  } finally {
-    favoriteLoading.value = false
   }
 }
 </script>
