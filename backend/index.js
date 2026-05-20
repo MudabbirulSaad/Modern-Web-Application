@@ -350,6 +350,10 @@ const readDesiredFavoritePayload = (body) => ({
   favorite: body.favorite
 });
 
+const readDesiredReviewUpvotePayload = (body) => ({
+  upvoted: body.upvoted
+});
+
 const normalizeReview = (review) => {
   if (!review) {
     return null;
@@ -856,12 +860,18 @@ app.delete('/api/reviews/:id', requireStudent, async (req, res) => {
   }
 });
 
-app.post('/api/reviews/:id/upvote', requireStudent, async (req, res) => {
+app.put('/api/reviews/:id/upvote', requireStudent, async (req, res) => {
   const reviewId = Number(req.params.id);
   const userId = Number(req.user.id);
+  const { upvoted } = readDesiredReviewUpvotePayload(req.body);
 
   if (!Number.isInteger(reviewId) || reviewId <= 0) {
     res.status(400).json({ status: 'error', message: 'Valid review id is required' });
+    return;
+  }
+
+  if (typeof upvoted !== 'boolean') {
+    res.status(400).json({ status: 'error', message: 'Valid upvoted state is required' });
     return;
   }
 
@@ -871,7 +881,7 @@ app.post('/api/reviews/:id/upvote', requireStudent, async (req, res) => {
     await conn.beginTransaction();
 
     const reviewRows = await conn.query(
-      'SELECT id FROM Reviews WHERE id = ? LIMIT 1',
+      'SELECT id FROM Reviews WHERE id = ? LIMIT 1 FOR UPDATE',
       [reviewId]
     );
 
@@ -885,23 +895,24 @@ app.post('/api/reviews/:id/upvote', requireStudent, async (req, res) => {
       'SELECT review_id FROM Review_Upvotes WHERE review_id = ? AND user_id = ? LIMIT 1',
       [reviewId, userId]
     );
+    const hasUpvote = upvoteRows.length > 0;
 
-    if (upvoteRows.length > 0) {
-      await conn.query(
-        'DELETE FROM Review_Upvotes WHERE review_id = ? AND user_id = ?',
-        [reviewId, userId]
-      );
-      await conn.query(
-        'UPDATE Reviews SET upvotes = GREATEST(upvotes - 1, 0) WHERE id = ?',
-        [reviewId]
-      );
-    } else {
+    if (upvoted && !hasUpvote) {
       await conn.query(
         'INSERT INTO Review_Upvotes (review_id, user_id) VALUES (?, ?)',
         [reviewId, userId]
       );
       await conn.query(
         'UPDATE Reviews SET upvotes = upvotes + 1 WHERE id = ?',
+        [reviewId]
+      );
+    } else if (!upvoted && hasUpvote) {
+      await conn.query(
+        'DELETE FROM Review_Upvotes WHERE review_id = ? AND user_id = ?',
+        [reviewId, userId]
+      );
+      await conn.query(
+        'UPDATE Reviews SET upvotes = GREATEST(upvotes - 1, 0) WHERE id = ?',
         [reviewId]
       );
     }

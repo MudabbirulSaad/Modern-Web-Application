@@ -1638,7 +1638,60 @@ describe('Review endpoints', () => {
     spy.mockRestore();
   });
 
-  it('should upvote a review when the requester has not upvoted it', async () => {
+  it('should reject desired-state review upvotes without authentication', async () => {
+    const res = await request(app)
+      .put('/api/reviews/12/upvote')
+      .send({ upvoted: true });
+
+    expect(res.statusCode).toEqual(401);
+    expect(res.body).toEqual({ status: 'error', message: 'Authentication required' });
+  });
+
+  it('should reject desired-state review upvotes with invalid payloads', async () => {
+    const res = await request(app)
+      .put('/api/reviews/12/upvote')
+      .set('Cookie', studentCookie())
+      .send({ upvoted: 'true' });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'Valid upvoted state is required' });
+  });
+
+  it('should reject desired-state review upvotes with invalid review ids', async () => {
+    const res = await request(app)
+      .put('/api/reviews/not-a-review/upvote')
+      .set('Cookie', studentCookie())
+      .send({ upvoted: true });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'Valid review id is required' });
+  });
+
+  it('should reject desired-state review upvotes for missing reviews', async () => {
+    const mockConn = {
+      beginTransaction: jest.fn().mockResolvedValue(),
+      commit: jest.fn().mockResolvedValue(),
+      rollback: jest.fn().mockResolvedValue(),
+      query: jest.fn().mockResolvedValueOnce([]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/reviews/999/upvote')
+      .set('Cookie', studentCookie())
+      .send({ upvoted: true });
+
+    expect(res.statusCode).toEqual(404);
+    expect(res.body).toEqual({ status: 'error', message: 'Review not found' });
+    expect(mockConn.rollback).toHaveBeenCalled();
+    expect(mockConn.commit).not.toHaveBeenCalled();
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should idempotently add a desired-state review upvote', async () => {
     const updatedReview = {
       id: 12,
       user_id: 5,
@@ -1666,8 +1719,9 @@ describe('Review endpoints', () => {
     const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
 
     const res = await request(app)
-      .post('/api/reviews/12/upvote')
-      .set('Cookie', studentCookie());
+      .put('/api/reviews/12/upvote')
+      .set('Cookie', studentCookie())
+      .send({ upvoted: true });
 
     expect(res.statusCode).toEqual(200);
     expect(res.body).toEqual({ status: 'ok', data: updatedReview });
@@ -1687,7 +1741,49 @@ describe('Review endpoints', () => {
     spy.mockRestore();
   });
 
-  it('should remove an upvote when the requester has already upvoted the review', async () => {
+  it('should not double-count when desired-state review upvote is repeated', async () => {
+    const updatedReview = {
+      id: 12,
+      user_id: 5,
+      username: 'studenttwo',
+      entity_type: 'course',
+      entity_id: 3,
+      rating: 5,
+      comment: 'Very helpful.',
+      upvotes: 1,
+      has_upvoted: 1,
+      created_at: '2026-05-18T00:00:00.000Z'
+    };
+    const mockConn = {
+      beginTransaction: jest.fn().mockResolvedValue(),
+      commit: jest.fn().mockResolvedValue(),
+      rollback: jest.fn().mockResolvedValue(),
+      query: jest.fn()
+        .mockResolvedValueOnce([{ id: 12 }])
+        .mockResolvedValueOnce([{ review_id: 12 }])
+        .mockResolvedValueOnce([updatedReview]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/reviews/12/upvote')
+      .set('Cookie', studentCookie())
+      .send({ upvoted: true });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: { ...updatedReview, has_upvoted: true } });
+    expect(mockConn.query).not.toHaveBeenCalledWith(
+      'UPDATE Reviews SET upvotes = upvotes + 1 WHERE id = ?',
+      [12]
+    );
+    expect(mockConn.commit).toHaveBeenCalled();
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should idempotently remove a desired-state review upvote', async () => {
     const updatedReview = {
       id: 12,
       user_id: 5,
@@ -1715,8 +1811,9 @@ describe('Review endpoints', () => {
     const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
 
     const res = await request(app)
-      .post('/api/reviews/12/upvote')
-      .set('Cookie', studentCookie());
+      .put('/api/reviews/12/upvote')
+      .set('Cookie', studentCookie())
+      .send({ upvoted: false });
 
     expect(res.statusCode).toEqual(200);
     expect(res.body).toEqual({ status: 'ok', data: updatedReview });
@@ -1727,6 +1824,48 @@ describe('Review endpoints', () => {
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(
       4,
+      'UPDATE Reviews SET upvotes = GREATEST(upvotes - 1, 0) WHERE id = ?',
+      [12]
+    );
+    expect(mockConn.commit).toHaveBeenCalled();
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should not decrement when desired-state review upvote removal is repeated', async () => {
+    const updatedReview = {
+      id: 12,
+      user_id: 5,
+      username: 'studenttwo',
+      entity_type: 'course',
+      entity_id: 3,
+      rating: 5,
+      comment: 'Very helpful.',
+      upvotes: 0,
+      has_upvoted: 0,
+      created_at: '2026-05-18T00:00:00.000Z'
+    };
+    const mockConn = {
+      beginTransaction: jest.fn().mockResolvedValue(),
+      commit: jest.fn().mockResolvedValue(),
+      rollback: jest.fn().mockResolvedValue(),
+      query: jest.fn()
+        .mockResolvedValueOnce([{ id: 12 }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([updatedReview]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/reviews/12/upvote')
+      .set('Cookie', studentCookie())
+      .send({ upvoted: false });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: { ...updatedReview, has_upvoted: false } });
+    expect(mockConn.query).not.toHaveBeenCalledWith(
       'UPDATE Reviews SET upvotes = GREATEST(upvotes - 1, 0) WHERE id = ?',
       [12]
     );
