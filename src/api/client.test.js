@@ -25,6 +25,27 @@ describe('api client', () => {
     })
   })
 
+  it('can return the raw payload for paginated responses', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: jest.fn(() => 'application/json')
+      },
+      json: jest.fn(async () => ({ data: [{ id: 1 }], total: 8 }))
+    })
+
+    await expect(apiRequest('/api/example', { rawPayload: true })).resolves.toEqual({
+      data: [{ id: 1 }],
+      total: 8
+    })
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/example', {
+      credentials: 'include',
+      headers: {}
+    })
+  })
+
   it('throws a domain-friendly ApiError and invalidates session on 401', async () => {
     const onUnauthorized = jest.fn()
     configureApiClient({ onUnauthorized })

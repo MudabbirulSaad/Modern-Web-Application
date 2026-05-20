@@ -35,15 +35,16 @@ const parseResponseBody = async (response) => {
 }
 
 export const apiRequest = async (url, options = {}) => {
+  const { rawPayload = false, ...requestOptions } = options
   const headers = {
-    ...(options.headers || {})
+    ...(requestOptions.headers || {})
   }
 
   let response
 
   try {
     response = await fetch(url, {
-      ...options,
+      ...requestOptions,
       credentials: 'include',
       headers
     })
@@ -66,5 +67,5 @@ export const apiRequest = async (url, options = {}) => {
     })
   }
 
-  return payload?.data ?? payload
+  return rawPayload ? payload : payload?.data ?? payload
 }
