@@ -46,6 +46,14 @@ watch([searchQuery, departmentFilter, sortOrder], () => {
   scheduleFetchCourses()
 })
 
+watch(
+  () => courseStore.getViewerScope(),
+  () => {
+    window.clearTimeout(searchTimeout)
+    courseStore.loadCourses()
+  }
+)
+
 onMounted(() => courseStore.loadCourses())
 
 onUnmounted(() => {
