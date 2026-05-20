@@ -6,6 +6,7 @@ import './style.css'
 import App from './App.vue'
 import router from './router'
 import { configureApiClient } from './api/client'
+import { initializeLocalCache } from './api/localCache'
 import { useOnlineStore } from './store/onlineStore'
 import { useUserStore } from './store/userStore'
 
@@ -25,6 +26,7 @@ configureApiClient({
 })
 
 onlineStore.initialize()
+void initializeLocalCache()
 
 userStore.initializeSession().finally(() => {
   app.mount('#app')
