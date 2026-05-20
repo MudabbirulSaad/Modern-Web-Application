@@ -77,7 +77,7 @@ const toggleFavorite = async () => {
 
 <template>
   <section class="tutor-detail">
-    <RouterLink class="btn btn-link px-0 mb-3" to="/tutors">
+    <RouterLink class="btn btn-directory-action-secondary btn-sm mb-3" to="/tutors">
       Back to tutors
     </RouterLink>
 
@@ -107,7 +107,7 @@ const toggleFavorite = async () => {
             <FavoriteButton
               v-if="userStore.isStudent"
               :active="tutor.has_favorite"
-              :disabled="favoriteLoading"
+              :loading="favoriteLoading"
               @toggle="toggleFavorite"
             />
           </div>

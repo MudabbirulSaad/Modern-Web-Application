@@ -85,7 +85,7 @@ onMounted(async () => {
       <section aria-labelledby="favorite-tutors-heading">
         <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
           <h2 id="favorite-tutors-heading" class="h3 mb-0">Favorite Tutors</h2>
-          <RouterLink class="btn btn-outline-primary btn-sm" to="/tutors">Browse tutors</RouterLink>
+          <RouterLink class="btn btn-directory-action-secondary btn-sm" to="/tutors">Browse tutors</RouterLink>
         </div>
 
         <div v-if="!hasFavoriteTutors" class="alert alert-secondary" role="status">
@@ -104,7 +104,7 @@ onMounted(async () => {
 
               <template #footer>
                 <RouterLink
-                  class="btn btn-outline-primary btn-sm"
+                  class="btn btn-directory-action btn-sm"
                   :to="{ name: 'tutor-detail', params: { id: tutor.id } }"
                 >
                   View profile
@@ -118,7 +118,7 @@ onMounted(async () => {
       <section aria-labelledby="favorite-courses-heading">
         <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
           <h2 id="favorite-courses-heading" class="h3 mb-0">Favorite Courses</h2>
-          <RouterLink class="btn btn-outline-primary btn-sm" to="/courses">Browse courses</RouterLink>
+          <RouterLink class="btn btn-directory-action-secondary btn-sm" to="/courses">Browse courses</RouterLink>
         </div>
 
         <div v-if="!hasFavoriteCourses" class="alert alert-secondary" role="status">
@@ -140,7 +140,7 @@ onMounted(async () => {
 
               <template #footer>
                 <RouterLink
-                  class="btn btn-outline-primary btn-sm"
+                  class="btn btn-directory-action btn-sm"
                   :to="{ name: 'course-detail', params: { id: course.id } }"
                 >
                   View course
