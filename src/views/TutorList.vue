@@ -1,156 +1,67 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import { RouterLink } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
 import BaseTransitionList from '../components/common/BaseTransitionList.vue'
 import FavoriteButton from '../components/common/FavoriteButton.vue'
 import PaginationControls from '../components/common/PaginationControls.vue'
+import { TUTOR_PAGE_LIMIT, TUTOR_SORT_OPTIONS, useTutorStore } from '../store/tutorStore'
 import { useUserStore } from '../store/userStore'
 
-const PAGE_LIMIT = 6
-const SORT_OPTIONS = [
-  { value: 'best-match', label: 'Best Match' },
-  { value: 'recently-active', label: 'Recently Active' },
-  { value: 'alphabetical', label: 'Alphabetical' }
-]
 const userStore = useUserStore()
-const tutors = ref([])
-const loading = ref(true)
-const error = ref('')
-const favoriteError = ref('')
-const updatingFavorites = ref(new Set())
-const searchQuery = ref('')
-const departmentFilter = ref('')
-const sortOrder = ref('best-match')
-const availableDepartments = ref([])
-const currentPage = ref(1)
-const totalTutors = ref(0)
+const tutorStore = useTutorStore()
+const {
+  tutors,
+  loading,
+  error,
+  staleMessage,
+  favoriteError,
+  searchQuery,
+  departmentFilter,
+  sortOrder,
+  availableDepartments,
+  currentPage,
+  totalTutors,
+  hasTutors,
+  hasActiveFilters
+} = storeToRefs(tutorStore)
 let searchTimeout = null
-
-const hasTutors = computed(() => tutors.value.length > 0)
-const hasActiveFilters = computed(() => Boolean(searchQuery.value.trim() || departmentFilter.value))
-
-const updateDepartments = (items) => {
-  const nextDepartments = new Set(availableDepartments.value)
-  items.forEach((tutor) => {
-    if (tutor.department) {
-      nextDepartments.add(tutor.department)
-    }
-  })
-  availableDepartments.value = [...nextDepartments].sort((a, b) => a.localeCompare(b))
-}
-
-const fetchTutors = async () => {
-  const params = new URLSearchParams()
-  const search = searchQuery.value.trim()
-
-  if (search) {
-    params.set('search', search)
-  }
-
-  if (departmentFilter.value) {
-    params.set('department', departmentFilter.value)
-  }
-
-  params.set('page', String(currentPage.value))
-  params.set('limit', String(PAGE_LIMIT))
-  params.set('sort', sortOrder.value)
-
-  loading.value = true
-  error.value = ''
-
-  try {
-    const queryString = params.toString()
-    const response = await fetch(`/api/tutors${queryString ? `?${queryString}` : ''}`, {
-      credentials: 'include'
-    })
-
-    if (!response.ok) {
-      throw new Error('Unable to load tutors')
-    }
-
-    const payload = await response.json()
-    tutors.value = payload.data || []
-    totalTutors.value = Number(payload.total || 0)
-    updateDepartments(tutors.value)
-  } catch (err) {
-    error.value = 'Tutors are unavailable right now. Please try again shortly.'
-  } finally {
-    loading.value = false
-  }
-}
 
 const scheduleFetchTutors = () => {
   window.clearTimeout(searchTimeout)
-  searchTimeout = window.setTimeout(fetchTutors, 300)
+  searchTimeout = window.setTimeout(() => tutorStore.loadTutors(), 300)
 }
 
 const clearFilters = () => {
-  searchQuery.value = ''
-  departmentFilter.value = ''
+  tutorStore.clearFilters()
 }
 
 const setPage = (pageNumber) => {
-  currentPage.value = pageNumber
-  fetchTutors()
+  tutorStore.setPage(pageNumber)
 }
 
 watch([searchQuery, departmentFilter, sortOrder], () => {
-  currentPage.value = 1
+  tutorStore.currentPage = 1
   scheduleFetchTutors()
 })
 
-onMounted(fetchTutors)
+watch(
+  () => tutorStore.getViewerScope(),
+  () => {
+    window.clearTimeout(searchTimeout)
+    tutorStore.loadTutors()
+  }
+)
+
+onMounted(() => tutorStore.loadTutors())
 
 onUnmounted(() => {
   window.clearTimeout(searchTimeout)
 })
 
-const isUpdatingFavorite = (tutorId) => updatingFavorites.value.has(tutorId)
-
-const setTutorFavorite = (tutorId, hasFavorite) => {
-  tutors.value = tutors.value.map((tutor) => (
-    tutor.id === tutorId ? { ...tutor, has_favorite: hasFavorite } : tutor
-  ))
-}
-
-const toggleFavorite = async (tutor) => {
-  if (!userStore.isStudent || isUpdatingFavorite(tutor.id)) {
-    return
-  }
-
-  favoriteError.value = ''
-  updatingFavorites.value = new Set([...updatingFavorites.value, tutor.id])
-
-  try {
-    const nextState = !tutor.has_favorite
-    const response = await fetch('/api/me/favorite', {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        entity_type: 'tutor',
-        entity_id: tutor.id,
-        favorite: nextState
-      })
-    })
-    const payload = await response.json()
-
-    if (!response.ok) {
-      throw new Error(payload.message || 'Unable to update favorite')
-    }
-
-    setTutorFavorite(tutor.id, payload.data?.has_favorite ?? nextState)
-  } catch (err) {
-    favoriteError.value = 'Favorite could not be updated. Please try again.'
-  } finally {
-    const nextUpdating = new Set(updatingFavorites.value)
-    nextUpdating.delete(tutor.id)
-    updatingFavorites.value = nextUpdating
-  }
-}
+const isUpdatingFavorite = (tutorId) => tutorStore.isUpdatingFavorite(tutorId)
+const toggleFavorite = (tutor) => tutorStore.toggleFavorite(tutor)
 </script>
 
 <template>
@@ -196,7 +107,7 @@ const toggleFavorite = async (tutor) => {
           <label class="form-label" for="tutor-sort">Sort by</label>
           <select id="tutor-sort" v-model="sortOrder" class="form-select">
             <option
-              v-for="option in SORT_OPTIONS"
+              v-for="option in TUTOR_SORT_OPTIONS"
               :key="option.value"
               :value="option.value"
             >
@@ -241,6 +152,10 @@ const toggleFavorite = async (tutor) => {
     </div>
 
     <BaseTransitionList v-else list-class="row g-4">
+      <div v-if="staleMessage" key="stale-message" class="col-12">
+        <div class="alert alert-info mb-0" role="status">{{ staleMessage }}</div>
+      </div>
+
       <div v-if="favoriteError" key="favorite-error" class="col-12">
         <div class="alert alert-warning mb-0" role="alert">{{ favoriteError }}</div>
       </div>
@@ -277,7 +192,7 @@ const toggleFavorite = async (tutor) => {
     <PaginationControls
       v-if="!loading && !error && hasTutors"
       :page="currentPage"
-      :limit="PAGE_LIMIT"
+      :limit="TUTOR_PAGE_LIMIT"
       :total="totalTutors"
       @update:page="setPage"
     />
