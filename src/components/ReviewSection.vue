@@ -28,8 +28,7 @@ const {
   actionError,
   submitting,
   updating,
-  deletingId,
-  upvotingId
+  deletingId
 } = storeToRefs(reviewStore)
 const editingReviewId = ref(null)
 const editRating = ref(5)
@@ -42,6 +41,7 @@ const canReview = computed(() => userStore.isStudent)
 const entityLabel = computed(() => props.entityType === 'course' ? 'course' : 'tutor')
 const reviewLimitText = computed(() => canReview.value ? 'All reviews' : 'Top reviews')
 const isReviewAuthor = (review) => userStore.userId && Number(review.user_id) === Number(userStore.userId)
+const isReviewUpvotePending = (review) => reviewStore.isUpdatingReviewUpvote(review.id)
 
 const upvoteLabel = (review) => `${review.upvotes} helpful vote${Number(review.upvotes) === 1 ? '' : 's'}`
 
@@ -328,18 +328,21 @@ watch(
             class="btn btn-sm"
             :class="review.has_upvoted ? 'btn-directory-action' : 'btn-directory-action-secondary'"
             type="button"
-            :disabled="!canReview || upvotingId === review.id"
+            :disabled="!canReview"
             :aria-pressed="review.has_upvoted ? 'true' : 'false'"
+            :aria-busy="isReviewUpvotePending(review) ? 'true' : 'false'"
             @click="toggleUpvote(review)"
           >
-            <span
-              v-if="upvotingId === review.id"
-              class="spinner-border spinner-border-sm me-1"
-              aria-hidden="true"
-            ></span>
             Helpful
           </button>
           <p class="text-body-secondary small mb-0">{{ upvoteLabel(review) }}</p>
+          <span
+            v-if="isReviewUpvotePending(review)"
+            class="badge rounded-pill text-bg-light border"
+            role="status"
+          >
+            Syncing
+          </span>
         </div>
       </BaseCard>
     </div>

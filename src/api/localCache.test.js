@@ -52,6 +52,14 @@ describe('local cache key canonicalization', () => {
       targetId: '7'
     })).toBe('type=favorite|target_kind=course|target_id=7')
   })
+
+  it('canonicalizes pending review upvote action keys from action fields', () => {
+    expect(canonicalizePendingLocalActionKey({
+      type: 'review-upvote',
+      targetKind: 'Review',
+      targetId: '12'
+    })).toBe('type=review-upvote|target_kind=review|target_id=12')
+  })
 })
 
 describe('local cache viewer scopes', () => {

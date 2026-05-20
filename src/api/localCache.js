@@ -198,7 +198,7 @@ const normalizeReviewEntityId = (entityId) => {
 const normalizePendingActionType = (type) => {
   const normalizedType = String(type || '').trim().toLowerCase()
 
-  if (normalizedType !== 'favorite') {
+  if (!['favorite', 'review-upvote'].includes(normalizedType)) {
     throw new Error(`Unsupported pending local action type: ${type}`)
   }
 
@@ -213,6 +213,21 @@ const normalizeFavoriteTargetKind = (targetKind) => {
   }
 
   return normalizedTargetKind
+}
+
+const normalizePendingActionTargetKind = (type, targetKind) => {
+  const normalizedType = normalizePendingActionType(type)
+  const normalizedTargetKind = String(targetKind || '').trim().toLowerCase()
+
+  if (normalizedType === 'review-upvote') {
+    if (normalizedTargetKind !== 'review') {
+      throw new Error(`Unsupported review upvote target kind: ${targetKind}`)
+    }
+
+    return normalizedTargetKind
+  }
+
+  return normalizeFavoriteTargetKind(normalizedTargetKind)
 }
 
 const omitStudentReviewMarkersForGuest = (viewerScope, row) => {
@@ -299,11 +314,11 @@ export const canonicalizePendingLocalActionKey = ({
   entityId
 } = {}) => {
   const normalizedType = normalizePendingActionType(type || actionType)
-  const normalizedTargetKind = normalizeFavoriteTargetKind(targetKind || entityType)
+  const normalizedTargetKind = normalizePendingActionTargetKind(normalizedType, targetKind || entityType)
   const normalizedTargetId = normalizePositiveInteger(targetId || entityId, 0)
 
   if (!normalizedTargetId) {
-    throw new Error('Pending favorite action target id is required')
+    throw new Error('Pending local action target id is required')
   }
 
   return [

@@ -1,12 +1,18 @@
 import { defineStore } from 'pinia'
-import { apiRequest } from '../api/client'
+import { ApiError, apiRequest } from '../api/client'
 import {
   GUEST_VIEWER_SCOPE,
+  canonicalizePendingLocalActionKey,
+  deletePendingLocalAction,
   getEntity,
+  getPendingLocalActions,
   getReviewCollection,
   getStudentViewerScope,
+  saveEntity,
+  savePendingLocalAction,
   saveReviewCollectionWithEntities
 } from '../api/localCache'
+import { useNotificationStore } from './notificationStore'
 import { useOnlineStore } from './onlineStore'
 import { useUserStore } from './userStore'
 
@@ -14,6 +20,8 @@ export const REVIEW_OFFLINE_MANAGEMENT_MESSAGE = 'A network connection is requir
 
 const reviewUnavailableMessage = 'Reviews are unavailable right now. Please try again shortly.'
 const staleReviewsMessage = 'Showing saved reviews. Fresh data unavailable.'
+const upvoteFailureMessage = 'Upvote could not be updated. Please try again.'
+const retryBackoffMs = 30 * 1000
 
 const createInitialState = () => ({
   reviewsById: {},
@@ -29,6 +37,8 @@ const createInitialState = () => ({
   updating: false,
   deletingId: null,
   upvotingId: null,
+  pendingReviewUpvoteKeys: [],
+  replayingReviewUpvotes: false,
   viewerScope: GUEST_VIEWER_SCOPE,
   activeTargetKey: '',
   activeEntityType: '',
@@ -45,6 +55,43 @@ const createReviewsUrl = ({ entityType, entityId }) => {
 
   return `/api/reviews?${params.toString()}`
 }
+
+const createReviewUpvoteAction = (review, desiredUpvoted) => ({
+  type: 'review-upvote',
+  targetKind: 'review',
+  targetId: review.id,
+  desiredUpvoted,
+  previousHasUpvoted: Boolean(review.has_upvoted),
+  previousUpvotes: Math.max(0, Number(review.upvotes || 0)),
+  attemptCount: 0,
+  nextAttemptAt: 0
+})
+
+const patchReviewUpvote = (review, desiredUpvoted) => {
+  const previousHasUpvoted = Boolean(review.has_upvoted)
+  const previousUpvotes = Math.max(0, Number(review.upvotes || 0))
+  const delta = desiredUpvoted === previousHasUpvoted ? 0 : (desiredUpvoted ? 1 : -1)
+
+  return {
+    ...review,
+    has_upvoted: desiredUpvoted,
+    upvotes: Math.max(0, previousUpvotes + delta)
+  }
+}
+
+const isRetriableSyncError = (err) => {
+  if (!(err instanceof ApiError)) {
+    return true
+  }
+
+  return err.status === 0 || err.status === 408 || err.status === 429 || err.status >= 500
+}
+
+const readServerReview = (payload, action) => ({
+  id: action.targetId,
+  ...(payload || {}),
+  has_upvoted: payload?.has_upvoted ?? action.desiredUpvoted
+})
 
 export const useReviewStore = defineStore('reviews', {
   state: createInitialState,
@@ -79,6 +126,42 @@ export const useReviewStore = defineStore('reviews', {
     resetActiveReviews() {
       this.reviewsById = {}
       this.activeReviewIds = []
+    },
+    getStudentViewerScope() {
+      const userStore = useUserStore()
+
+      if (!userStore.isStudent || !userStore.userId) {
+        return null
+      }
+
+      return getStudentViewerScope(userStore.userId)
+    },
+    getReviewUpvoteActionKey(reviewId) {
+      return canonicalizePendingLocalActionKey({
+        type: 'review-upvote',
+        targetKind: 'review',
+        targetId: reviewId
+      })
+    },
+    hasPendingReviewUpvote(reviewId) {
+      return this.pendingReviewUpvoteKeys.includes(this.getReviewUpvoteActionKey(reviewId))
+    },
+    isUpdatingReviewUpvote(reviewId) {
+      return this.hasPendingReviewUpvote(reviewId)
+    },
+    async refreshPendingReviewUpvotes() {
+      const viewerScope = this.getStudentViewerScope()
+
+      if (!viewerScope) {
+        this.pendingReviewUpvoteKeys = []
+        return []
+      }
+
+      const records = await getPendingLocalActions(viewerScope)
+      const reviewUpvoteRecords = records.filter((record) => record.data?.type === 'review-upvote')
+      this.pendingReviewUpvoteKeys = reviewUpvoteRecords.map((record) => record.key)
+
+      return reviewUpvoteRecords
     },
     async saveActiveCollection() {
       if (!this.activeEntityType || !this.activeEntityId) {
@@ -162,6 +245,8 @@ export const useReviewStore = defineStore('reviews', {
         this.activeEntityType = target.entityType
         this.activeEntityId = target.entityId
       }
+
+      await this.refreshPendingReviewUpvotes()
 
       this.error = ''
       this.staleMessage = ''
@@ -301,6 +386,25 @@ export const useReviewStore = defineStore('reviews', {
         this.deletingId = null
       }
     },
+    async patchVisibleReview(review) {
+      this.applyReviews(this.reviews.map((currentReview) => (
+        currentReview.id === review.id ? {
+          ...currentReview,
+          ...review
+        } : currentReview
+      )))
+
+      await saveEntity({
+        viewerScope: this.getViewerScope(),
+        namespace: 'reviews',
+        row: {
+          ...(this.reviewsById[String(review.id)] || {}),
+          ...review
+        }
+      })
+
+      await this.saveActiveCollection()
+    },
     async toggleUpvote(review) {
       const userStore = useUserStore()
 
@@ -309,29 +413,145 @@ export const useReviewStore = defineStore('reviews', {
       }
 
       this.actionError = ''
-      this.upvotingId = review.id
+      const viewerScope = this.getStudentViewerScope()
 
-      try {
-        const updatedReview = await apiRequest(`/api/reviews/${review.id}/upvote`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            upvoted: !review.has_upvoted
-          })
-        })
+      if (!viewerScope) {
+        return null
+      }
 
+      const desiredUpvoted = !Boolean(review.has_upvoted)
+      const optimisticReview = patchReviewUpvote(review, desiredUpvoted)
+      const action = createReviewUpvoteAction(review, desiredUpvoted)
+
+      await this.patchVisibleReview(optimisticReview)
+      await savePendingLocalAction({ viewerScope, action })
+      await this.refreshPendingReviewUpvotes()
+
+      void this.replayPendingReviewUpvotes()
+      return optimisticReview
+    },
+    async reconcileReviewUpvote(action, review, replayViewerScope = this.getStudentViewerScope()) {
+      const viewerScope = replayViewerScope
+
+      if (!viewerScope || this.getStudentViewerScope() !== viewerScope) {
+        return false
+      }
+
+      const cachedRecord = await getEntity({
+        viewerScope,
+        namespace: 'reviews',
+        id: action.targetId
+      })
+      const mergedReview = {
+        ...(cachedRecord?.data || {}),
+        ...review
+      }
+
+      await saveEntity({
+        viewerScope,
+        namespace: 'reviews',
+        row: mergedReview
+      })
+
+      if (this.viewerScope === viewerScope && this.reviewsById[String(action.targetId)]) {
         this.applyReviews(this.reviews.map((currentReview) => (
-          currentReview.id === updatedReview.id ? updatedReview : currentReview
+          currentReview.id === action.targetId ? {
+            ...currentReview,
+            ...mergedReview
+          } : currentReview
         )))
         await this.saveActiveCollection()
-        return updatedReview
-      } catch (err) {
-        this.actionError = err.message || 'Upvote could not be updated. Please try again.'
-        return null
+      }
+
+      return true
+    },
+    async keepReviewUpvoteForRetry(viewerScope, record, err) {
+      const attemptCount = Number(record.data?.attemptCount || 0) + 1
+
+      await savePendingLocalAction({
+        viewerScope,
+        action: {
+          ...record.data,
+          attemptCount,
+          nextAttemptAt: Date.now() + (retryBackoffMs * attemptCount),
+          lastError: err.message || upvoteFailureMessage
+        }
+      })
+      await this.refreshPendingReviewUpvotes()
+    },
+    async discardReviewUpvoteAndReconcile(viewerScope, record) {
+      const rollbackReview = {
+        id: record.data.targetId,
+        has_upvoted: record.data.previousHasUpvoted ?? !record.data.desiredUpvoted,
+        upvotes: Math.max(0, Number(record.data.previousUpvotes || 0))
+      }
+
+      await Promise.all([
+        deletePendingLocalAction({ viewerScope, action: record.data }),
+        this.reconcileReviewUpvote(record.data, rollbackReview, viewerScope)
+      ])
+      await this.refreshPendingReviewUpvotes()
+      useNotificationStore().notify({
+        message: upvoteFailureMessage,
+        variant: 'warning'
+      })
+    },
+    async replayPendingReviewUpvotes() {
+      const viewerScope = this.getStudentViewerScope()
+
+      if (!viewerScope || this.replayingReviewUpvotes) {
+        return
+      }
+
+      this.replayingReviewUpvotes = true
+
+      try {
+        let records = await this.refreshPendingReviewUpvotes()
+
+        while (records.length > 0) {
+          const record = records[0]
+          const action = record.data
+
+          if (Number(action.nextAttemptAt || 0) > Date.now()) {
+            break
+          }
+
+          try {
+            const payload = await apiRequest(`/api/reviews/${action.targetId}/upvote`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                upvoted: action.desiredUpvoted
+              })
+            })
+            const latestRecords = await getPendingLocalActions(viewerScope)
+            const latestRecord = latestRecords.find((item) => item.key === record.key)
+
+            if (latestRecord?.data?.desiredUpvoted !== action.desiredUpvoted) {
+              records = await this.refreshPendingReviewUpvotes()
+              continue
+            }
+
+            if (this.getStudentViewerScope() !== viewerScope) {
+              break
+            }
+
+            await this.reconcileReviewUpvote(action, readServerReview(payload, action), viewerScope)
+            await deletePendingLocalAction({ viewerScope, action })
+            records = await this.refreshPendingReviewUpvotes()
+          } catch (err) {
+            if (isRetriableSyncError(err)) {
+              await this.keepReviewUpvoteForRetry(viewerScope, record, err)
+            } else {
+              await this.discardReviewUpvoteAndReconcile(viewerScope, record)
+            }
+            break
+          }
+        }
       } finally {
-        this.upvotingId = null
+        this.replayingReviewUpvotes = false
       }
     }
   }
