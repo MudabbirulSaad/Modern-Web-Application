@@ -2,11 +2,17 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
+import BaseTransitionList from '../components/common/BaseTransitionList.vue'
 import FavoriteButton from '../components/common/FavoriteButton.vue'
 import PaginationControls from '../components/common/PaginationControls.vue'
 import { useUserStore } from '../store/userStore'
 
 const PAGE_LIMIT = 6
+const SORT_OPTIONS = [
+  { value: 'best-match', label: 'Best Match' },
+  { value: 'recently-active', label: 'Recently Active' },
+  { value: 'alphabetical', label: 'Alphabetical' }
+]
 const userStore = useUserStore()
 const courses = ref([])
 const loading = ref(true)
@@ -15,6 +21,7 @@ const favoriteError = ref('')
 const updatingFavorites = ref(new Set())
 const searchQuery = ref('')
 const departmentFilter = ref('')
+const sortOrder = ref('best-match')
 const availableDepartments = ref([])
 const currentPage = ref(1)
 const totalCourses = ref(0)
@@ -47,6 +54,7 @@ const fetchCourses = async () => {
 
   params.set('page', String(currentPage.value))
   params.set('limit', String(PAGE_LIMIT))
+  params.set('sort', sortOrder.value)
 
   loading.value = true
   error.value = ''
@@ -87,7 +95,7 @@ const setPage = (pageNumber) => {
   fetchCourses()
 }
 
-watch([searchQuery, departmentFilter], () => {
+watch([searchQuery, departmentFilter, sortOrder], () => {
   currentPage.value = 1
   scheduleFetchCourses()
 })
@@ -158,7 +166,7 @@ const toggleFavorite = async (course) => {
 
     <div class="search-filter-bar border rounded-3 p-3 mb-4">
       <div class="row g-3 align-items-end">
-        <div class="col-12 col-lg-6">
+        <div class="col-12 col-lg-4">
           <label class="form-label" for="course-search">Search courses</label>
           <input
             id="course-search"
@@ -169,7 +177,7 @@ const toggleFavorite = async (course) => {
           >
         </div>
 
-        <div class="col-12 col-md-6 col-lg-4">
+        <div class="col-12 col-md-6 col-lg-3">
           <label class="form-label" for="course-department-filter">Department</label>
           <select id="course-department-filter" v-model="departmentFilter" class="form-select">
             <option value="">All departments</option>
@@ -179,6 +187,19 @@ const toggleFavorite = async (course) => {
               :value="department"
             >
               {{ department }}
+            </option>
+          </select>
+        </div>
+
+        <div class="col-12 col-md-6 col-lg-3">
+          <label class="form-label" for="course-sort">Sort by</label>
+          <select id="course-sort" v-model="sortOrder" class="form-select">
+            <option
+              v-for="option in SORT_OPTIONS"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
             </option>
           </select>
         </div>
@@ -218,8 +239,8 @@ const toggleFavorite = async (course) => {
       {{ hasActiveFilters ? 'No courses match your search.' : 'No courses are available yet.' }}
     </div>
 
-    <div v-else class="row g-4">
-      <div v-if="favoriteError" class="col-12">
+    <BaseTransitionList v-else list-class="row g-4">
+      <div v-if="favoriteError" key="favorite-error" class="col-12">
         <div class="alert alert-warning mb-0" role="alert">{{ favoriteError }}</div>
       </div>
 
@@ -252,7 +273,7 @@ const toggleFavorite = async (course) => {
           </template>
         </BaseCard>
       </div>
-    </div>
+    </BaseTransitionList>
 
     <PaginationControls
       v-if="!loading && !error && hasCourses"

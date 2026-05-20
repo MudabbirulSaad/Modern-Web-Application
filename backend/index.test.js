@@ -165,6 +165,39 @@ describe('GET /api/tutors', () => {
 
     spy.mockRestore();
   });
+
+  it('should sort tutors by best match when requested', async () => {
+    const mockTutors = [
+      {
+        id: 1,
+        name: 'Dr Maya Chen',
+        department: 'Computer Science',
+        bio: 'Specialises in web development and human-computer interaction.',
+        created_at: '2026-05-18T00:00:00.000Z',
+        updated_at: '2026-05-18T00:00:00.000Z'
+      }
+    ];
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ total: 1 }])
+        .mockResolvedValueOnce(mockTutors),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/tutors')
+      .query({ sort: 'best-match' });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: mockTutors, total: 1 });
+    expect(mockConn.query.mock.calls[1][0]).toContain('AVG(rating) AS average_rating');
+    expect(mockConn.query.mock.calls[1][0]).toContain('COUNT(*) AS review_count');
+    expect(mockConn.query.mock.calls[1][0]).toContain('ORDER BY (COALESCE(review_stats.average_rating, 0) * 2) + LOG10(COALESCE(review_stats.review_count, 0) + 1) DESC');
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
 });
 
 describe('GET /api/tutors/:id', () => {
@@ -522,6 +555,37 @@ describe('GET /api/courses', () => {
       expect.stringContaining('LIMIT ? OFFSET ?'),
       [3, 3]
     );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should sort courses by recently active when requested', async () => {
+    const mockCourses = [
+      {
+        id: 1,
+        title: 'COS30043 Interface Design and Development',
+        department: 'Computer Science',
+        description: 'Design and build responsive web interfaces using modern frontend practices.',
+        tutor_names: 'Dr Maya Chen'
+      }
+    ];
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ total: 1 }])
+        .mockResolvedValueOnce(mockCourses),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/courses')
+      .query({ sort: 'recently-active' });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: mockCourses, total: 1 });
+    expect(mockConn.query.mock.calls[1][0]).toContain('MAX(created_at) AS latest_review_at');
+    expect(mockConn.query.mock.calls[1][0]).toContain('ORDER BY GREATEST(c.updated_at, COALESCE(review_stats.latest_review_at, c.updated_at)) DESC');
     expect(mockConn.release).toHaveBeenCalled();
 
     spy.mockRestore();
