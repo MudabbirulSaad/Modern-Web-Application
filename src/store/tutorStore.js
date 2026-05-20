@@ -265,7 +265,13 @@ export const useTutorStore = defineStore('tutors', {
     },
     isUpdatingFavorite(tutorId) {
       return this.updatingFavoriteIds.includes(tutorId)
-        || useFavoriteSyncStore().hasPendingFavorite('tutor', tutorId)
+        || useFavoriteSyncStore().isFavoriteSyncing('tutor', tutorId)
+    },
+    hasBlockedFavorite(tutorId) {
+      return useFavoriteSyncStore().hasBlockedFavorite('tutor', tutorId)
+    },
+    retryFavorite(tutorId) {
+      return useFavoriteSyncStore().retryFavorite('tutor', tutorId)
     },
     async setTutorFavorite(tutorId, hasFavorite) {
       const key = String(tutorId)

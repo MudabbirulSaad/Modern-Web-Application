@@ -61,7 +61,9 @@ onUnmounted(() => {
 })
 
 const isUpdatingFavorite = (tutorId) => tutorStore.isUpdatingFavorite(tutorId)
+const hasBlockedFavorite = (tutorId) => tutorStore.hasBlockedFavorite(tutorId)
 const toggleFavorite = (tutor) => tutorStore.toggleFavorite(tutor)
+const retryFavorite = (tutorId) => tutorStore.retryFavorite(tutorId)
 </script>
 
 <template>
@@ -169,7 +171,9 @@ const toggleFavorite = (tutor) => tutorStore.toggleFavorite(tutor)
                 v-if="userStore.isStudent"
                 :active="tutor.has_favorite"
                 :loading="isUpdatingFavorite(tutor.id)"
+                :blocked="hasBlockedFavorite(tutor.id)"
                 @toggle="toggleFavorite(tutor)"
+                @retry="retryFavorite(tutor.id)"
               />
             </div>
           </template>

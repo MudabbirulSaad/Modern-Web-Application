@@ -21,7 +21,14 @@ export const REVIEW_OFFLINE_MANAGEMENT_MESSAGE = 'A network connection is requir
 const reviewUnavailableMessage = 'Reviews are unavailable right now. Please try again shortly.'
 const staleReviewsMessage = 'Showing saved reviews. Fresh data unavailable.'
 const upvoteFailureMessage = 'Upvote could not be updated. Please try again.'
+const upvoteBlockedMessage = 'Upvote could not be updated. Retry when your connection is stable.'
 const retryBackoffMs = 30 * 1000
+const maxRetryAttempts = 3
+const pendingStatuses = {
+  queued: 'queued',
+  syncing: 'syncing',
+  blocked: 'blocked'
+}
 
 const createInitialState = () => ({
   reviewsById: {},
@@ -38,6 +45,8 @@ const createInitialState = () => ({
   deletingId: null,
   upvotingId: null,
   pendingReviewUpvoteKeys: [],
+  blockedReviewUpvoteKeys: [],
+  syncingReviewUpvoteKeys: [],
   replayingReviewUpvotes: false,
   replayGeneration: 0,
   viewerScope: GUEST_VIEWER_SCOPE,
@@ -65,7 +74,9 @@ const createReviewUpvoteAction = (review, desiredUpvoted) => ({
   previousHasUpvoted: Boolean(review.has_upvoted),
   previousUpvotes: Math.max(0, Number(review.upvotes || 0)),
   attemptCount: 0,
-  nextAttemptAt: 0
+  nextAttemptAt: 0,
+  status: pendingStatuses.queued,
+  lastError: ''
 })
 
 const patchReviewUpvote = (review, desiredUpvoted) => {
@@ -94,6 +105,16 @@ const readServerReview = (payload, action) => ({
   has_upvoted: payload?.has_upvoted ?? action.desiredUpvoted
 })
 
+const isBlockedAction = (action) => action?.status === pendingStatuses.blocked
+
+const isSyncingAction = (action) => action?.status === pendingStatuses.syncing
+
+const findActionRecord = (records, key) => records.find((record) => record.key === key)
+
+const findReplayableRecord = (records) => records.find((record) => (
+  !isBlockedAction(record.data) && Number(record.data?.nextAttemptAt || 0) <= Date.now()
+))
+
 export const useReviewStore = defineStore('reviews', {
   state: createInitialState,
   getters: {
@@ -109,6 +130,8 @@ export const useReviewStore = defineStore('reviews', {
       this.replayGeneration += 1
       this.replayingReviewUpvotes = false
       this.pendingReviewUpvoteKeys = []
+      this.blockedReviewUpvoteKeys = []
+      this.syncingReviewUpvoteKeys = []
     },
     resetForGuestScope() {
       const nextState = createInitialState()
@@ -127,6 +150,8 @@ export const useReviewStore = defineStore('reviews', {
       this.deletingId = nextState.deletingId
       this.upvotingId = nextState.upvotingId
       this.pendingReviewUpvoteKeys = nextState.pendingReviewUpvoteKeys
+      this.blockedReviewUpvoteKeys = nextState.blockedReviewUpvoteKeys
+      this.syncingReviewUpvoteKeys = nextState.syncingReviewUpvoteKeys
       this.replayingReviewUpvotes = nextState.replayingReviewUpvotes
       this.viewerScope = nextState.viewerScope
       this.activeTargetKey = nextState.activeTargetKey
@@ -176,19 +201,31 @@ export const useReviewStore = defineStore('reviews', {
       return this.pendingReviewUpvoteKeys.includes(this.getReviewUpvoteActionKey(reviewId))
     },
     isUpdatingReviewUpvote(reviewId) {
-      return this.hasPendingReviewUpvote(reviewId)
+      const key = this.getReviewUpvoteActionKey(reviewId)
+      return this.pendingReviewUpvoteKeys.includes(key) && !this.blockedReviewUpvoteKeys.includes(key)
+    },
+    hasBlockedReviewUpvote(reviewId) {
+      return this.blockedReviewUpvoteKeys.includes(this.getReviewUpvoteActionKey(reviewId))
     },
     async refreshPendingReviewUpvotes() {
       const viewerScope = this.getStudentViewerScope()
 
       if (!viewerScope) {
         this.pendingReviewUpvoteKeys = []
+        this.blockedReviewUpvoteKeys = []
+        this.syncingReviewUpvoteKeys = []
         return []
       }
 
       const records = await getPendingLocalActions(viewerScope)
       const reviewUpvoteRecords = records.filter((record) => record.data?.type === 'review-upvote')
       this.pendingReviewUpvoteKeys = reviewUpvoteRecords.map((record) => record.key)
+      this.blockedReviewUpvoteKeys = reviewUpvoteRecords
+        .filter((record) => isBlockedAction(record.data))
+        .map((record) => record.key)
+      this.syncingReviewUpvoteKeys = reviewUpvoteRecords
+        .filter((record) => isSyncingAction(record.data))
+        .map((record) => record.key)
 
       return reviewUpvoteRecords
     },
@@ -496,17 +533,54 @@ export const useReviewStore = defineStore('reviews', {
     },
     async keepReviewUpvoteForRetry(viewerScope, record, err) {
       const attemptCount = Number(record.data?.attemptCount || 0) + 1
+      const blocked = attemptCount >= maxRetryAttempts
 
       await savePendingLocalAction({
         viewerScope,
         action: {
           ...record.data,
           attemptCount,
-          nextAttemptAt: Date.now() + (retryBackoffMs * attemptCount),
+          status: blocked ? pendingStatuses.blocked : pendingStatuses.queued,
+          nextAttemptAt: blocked ? 0 : Date.now() + (retryBackoffMs * attemptCount),
           lastError: err.message || upvoteFailureMessage
         }
       })
       await this.refreshPendingReviewUpvotes()
+
+      if (blocked) {
+        useNotificationStore().notify({
+          message: upvoteBlockedMessage,
+          variant: 'warning'
+        })
+      }
+    },
+    async retryReviewUpvote(reviewId) {
+      const viewerScope = this.getStudentViewerScope()
+
+      if (!viewerScope) {
+        return false
+      }
+
+      const key = this.getReviewUpvoteActionKey(reviewId)
+      const records = await getPendingLocalActions(viewerScope)
+      const record = findActionRecord(records, key)
+
+      if (!record?.data || !isBlockedAction(record.data)) {
+        return false
+      }
+
+      await savePendingLocalAction({
+        viewerScope,
+        action: {
+          ...record.data,
+          status: pendingStatuses.queued,
+          nextAttemptAt: 0,
+          lastError: ''
+        }
+      })
+      await this.refreshPendingReviewUpvotes()
+      await this.replayPendingReviewUpvotes()
+      return true
     },
     async discardReviewUpvoteAndReconcile(viewerScope, record) {
       const rollbackReview = {
@@ -539,14 +613,23 @@ export const useReviewStore = defineStore('reviews', {
         let records = await this.refreshPendingReviewUpvotes()
 
         while (records.length > 0 && this.replayGeneration === replayGeneration) {
-          const record = records[0]
-          const action = record.data
+          const record = findReplayableRecord(records)
 
-          if (Number(action.nextAttemptAt || 0) > Date.now()) {
+          if (!record) {
             break
           }
 
+          const action = record.data
+
           try {
+            await savePendingLocalAction({
+              viewerScope,
+              action: {
+                ...action,
+                status: pendingStatuses.syncing
+              }
+            })
+            await this.refreshPendingReviewUpvotes()
             const payload = await apiRequest(`/api/reviews/${action.targetId}/upvote`, {
               method: 'PUT',
               headers: {

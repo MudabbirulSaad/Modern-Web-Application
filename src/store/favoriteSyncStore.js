@@ -13,7 +13,14 @@ import { useNotificationStore } from './notificationStore'
 import { useUserStore } from './userStore'
 
 const favoriteFailureMessage = 'Favorite could not be updated. Please try again.'
+const favoriteBlockedMessage = 'Favorite could not be updated. Retry when your connection is stable.'
 const retryBackoffMs = 30 * 1000
+const maxRetryAttempts = 3
+const pendingStatuses = {
+  queued: 'queued',
+  syncing: 'syncing',
+  blocked: 'blocked'
+}
 const visiblePatchers = new Map()
 
 const getPatcherKey = (targetKind, targetId) => `${targetKind}:${targetId}`
@@ -37,6 +44,16 @@ const readServerEntity = (payload, action) => ({
   ...(payload || {}),
   has_favorite: payload?.has_favorite ?? action.desiredFavorite
 })
+
+const isBlockedAction = (action) => action?.status === pendingStatuses.blocked
+
+const isSyncingAction = (action) => action?.status === pendingStatuses.syncing
+
+const findActionRecord = (records, key) => records.find((record) => record.key === key)
+
+const findReplayableRecord = (records) => records.find((record) => (
+  !isBlockedAction(record.data) && Number(record.data?.nextAttemptAt || 0) <= Date.now()
+))
 
 export const registerFavoriteEntityPatcher = ({ targetKind, targetId, patch }) => {
   if (typeof patch !== 'function') {
@@ -70,6 +87,8 @@ const mergeCachedEntity = async (viewerScope, action, entity) => {
 export const useFavoriteSyncStore = defineStore('favoriteSync', {
   state: () => ({
     pendingFavoriteKeys: [],
+    blockedFavoriteKeys: [],
+    syncingFavoriteKeys: [],
     replaying: false,
     replayGeneration: 0
   }),
@@ -78,6 +97,8 @@ export const useFavoriteSyncStore = defineStore('favoriteSync', {
       this.replayGeneration += 1
       this.replaying = false
       this.pendingFavoriteKeys = []
+      this.blockedFavoriteKeys = []
+      this.syncingFavoriteKeys = []
     },
     getStudentViewerScope() {
       const userStore = useUserStore()
@@ -98,17 +119,32 @@ export const useFavoriteSyncStore = defineStore('favoriteSync', {
     hasPendingFavorite(targetKind, targetId) {
       return this.pendingFavoriteKeys.includes(this.getFavoriteActionKey(targetKind, targetId))
     },
+    hasBlockedFavorite(targetKind, targetId) {
+      return this.blockedFavoriteKeys.includes(this.getFavoriteActionKey(targetKind, targetId))
+    },
+    isFavoriteSyncing(targetKind, targetId) {
+      const key = this.getFavoriteActionKey(targetKind, targetId)
+      return this.pendingFavoriteKeys.includes(key) && !this.blockedFavoriteKeys.includes(key)
+    },
     async refreshPendingFavorites() {
       const viewerScope = this.getStudentViewerScope()
 
       if (!viewerScope) {
         this.pendingFavoriteKeys = []
+        this.blockedFavoriteKeys = []
+        this.syncingFavoriteKeys = []
         return []
       }
 
       const records = await getPendingLocalActions(viewerScope)
       const favoriteRecords = records.filter((record) => record.data?.type === 'favorite')
       this.pendingFavoriteKeys = favoriteRecords.map((record) => record.key)
+      this.blockedFavoriteKeys = favoriteRecords
+        .filter((record) => isBlockedAction(record.data))
+        .map((record) => record.key)
+      this.syncingFavoriteKeys = favoriteRecords
+        .filter((record) => isSyncingAction(record.data))
+        .map((record) => record.key)
 
       return favoriteRecords
     },
@@ -126,7 +162,9 @@ export const useFavoriteSyncStore = defineStore('favoriteSync', {
         desiredFavorite,
         previousFavorite,
         attemptCount: 0,
-        nextAttemptAt: 0
+        nextAttemptAt: 0,
+        status: pendingStatuses.queued,
+        lastError: ''
       }
 
       await Promise.all([
@@ -171,17 +209,54 @@ export const useFavoriteSyncStore = defineStore('favoriteSync', {
     },
     async keepForRetry(viewerScope, record, err) {
       const attemptCount = Number(record.data?.attemptCount || 0) + 1
+      const blocked = attemptCount >= maxRetryAttempts
 
       await savePendingLocalAction({
         viewerScope,
         action: {
           ...record.data,
           attemptCount,
-          nextAttemptAt: Date.now() + (retryBackoffMs * attemptCount),
+          status: blocked ? pendingStatuses.blocked : pendingStatuses.queued,
+          nextAttemptAt: blocked ? 0 : Date.now() + (retryBackoffMs * attemptCount),
           lastError: err.message || favoriteFailureMessage
         }
       })
       await this.refreshPendingFavorites()
+
+      if (blocked) {
+        useNotificationStore().notify({
+          message: favoriteBlockedMessage,
+          variant: 'warning'
+        })
+      }
+    },
+    async retryFavorite(targetKind, targetId) {
+      const viewerScope = this.getStudentViewerScope()
+
+      if (!viewerScope) {
+        return false
+      }
+
+      const key = this.getFavoriteActionKey(targetKind, targetId)
+      const records = await getPendingLocalActions(viewerScope)
+      const record = findActionRecord(records, key)
+
+      if (!record?.data || !isBlockedAction(record.data)) {
+        return false
+      }
+
+      await savePendingLocalAction({
+        viewerScope,
+        action: {
+          ...record.data,
+          status: pendingStatuses.queued,
+          nextAttemptAt: 0,
+          lastError: ''
+        }
+      })
+      await this.refreshPendingFavorites()
+      await this.replayPendingFavorites()
+      return true
     },
     async discardAndReconcile(viewerScope, record) {
       const rollbackEntity = {
@@ -213,14 +288,23 @@ export const useFavoriteSyncStore = defineStore('favoriteSync', {
         let records = await this.refreshPendingFavorites()
 
         while (records.length > 0 && this.replayGeneration === replayGeneration) {
-          const record = records[0]
-          const action = record.data
+          const record = findReplayableRecord(records)
 
-          if (Number(action.nextAttemptAt || 0) > Date.now()) {
+          if (!record) {
             break
           }
 
+          const action = record.data
+
           try {
+            await savePendingLocalAction({
+              viewerScope,
+              action: {
+                ...action,
+                status: pendingStatuses.syncing
+              }
+            })
+            await this.refreshPendingFavorites()
             const payload = await apiRequest('/api/me/favorite', {
               method: 'PUT',
               headers: {

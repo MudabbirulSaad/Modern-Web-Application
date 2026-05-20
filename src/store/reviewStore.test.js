@@ -436,12 +436,128 @@ describe('review upvote local-first sync', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           desiredUpvoted: true,
+          status: 'queued',
           attemptCount: 1,
           nextAttemptAt: expect.any(Number),
           lastError: 'Unable to update upvote'
         })
       })
     ])
+  })
+
+  it('blocks repeated retriable failures and skips blocked review upvotes during automatic replay', async () => {
+    const studentScope = getStudentViewerScope(7)
+    await savePendingLocalAction({
+      viewerScope: studentScope,
+      action: {
+        type: 'review-upvote',
+        targetKind: 'review',
+        targetId: 10,
+        desiredUpvoted: true,
+        attemptCount: 2,
+        nextAttemptAt: 0,
+        status: 'queued'
+      }
+    })
+    global.fetch.mockResolvedValue(failedUpvoteResponse({ status: 503 }))
+
+    const userStore = useUserStore()
+    const store = useReviewStore()
+    const notificationStore = useNotificationStore()
+    userStore.setUser({ id: 7, role: 'student' })
+
+    await store.replayPendingReviewUpvotes()
+
+    expect(store.hasPendingReviewUpvote(10)).toBe(true)
+    expect(store.isUpdatingReviewUpvote(10)).toBe(false)
+    expect(store.hasBlockedReviewUpvote(10)).toBe(true)
+    await expect(getPendingLocalActions(studentScope)).resolves.toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({
+          desiredUpvoted: true,
+          status: 'blocked',
+          attemptCount: 3,
+          nextAttemptAt: 0,
+          lastError: 'Unable to update upvote'
+        })
+      })
+    ])
+    expect(notificationStore.notifications).toEqual([
+      expect.objectContaining({
+        message: 'Upvote could not be updated. Retry when your connection is stable.',
+        variant: 'warning'
+      })
+    ])
+
+    global.fetch.mockClear()
+    await store.replayPendingReviewUpvotes()
+
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('manually retries a blocked review upvote through the normal replay path', async () => {
+    const studentScope = getStudentViewerScope(7)
+    await savePendingLocalAction({
+      viewerScope: studentScope,
+      action: {
+        type: 'review-upvote',
+        targetKind: 'review',
+        targetId: 10,
+        desiredUpvoted: true,
+        attemptCount: 3,
+        nextAttemptAt: 0,
+        status: 'blocked'
+      }
+    })
+    global.fetch.mockResolvedValue(okUpvoteResponse({ id: 10, upvotes: 2, has_upvoted: true }))
+
+    const userStore = useUserStore()
+    const store = useReviewStore()
+    userStore.setUser({ id: 7, role: 'student' })
+    await store.refreshPendingReviewUpvotes()
+
+    await store.retryReviewUpvote(10)
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/reviews/10/upvote', expect.objectContaining({
+      body: JSON.stringify({ upvoted: true })
+    }))
+    await expect(getPendingLocalActions(studentScope)).resolves.toEqual([])
+  })
+
+  it('reactivates a blocked review upvote when the user overwrites the desired state', async () => {
+    const studentScope = getStudentViewerScope(7)
+    await savePendingLocalAction({
+      viewerScope: studentScope,
+      action: {
+        type: 'review-upvote',
+        targetKind: 'review',
+        targetId: 10,
+        desiredUpvoted: true,
+        previousHasUpvoted: false,
+        previousUpvotes: 0,
+        attemptCount: 3,
+        nextAttemptAt: 0,
+        status: 'blocked'
+      }
+    })
+    global.fetch.mockResolvedValue(okUpvoteResponse({ id: 10, upvotes: 0, has_upvoted: false }))
+
+    const userStore = useUserStore()
+    const store = useReviewStore()
+    userStore.setUser({ id: 7, role: 'student' })
+    store.viewerScope = studentScope
+    store.activeEntityType = 'course'
+    store.activeEntityId = 3
+    store.applyReviews([{ id: 10, comment: 'Saved', upvotes: 1, has_upvoted: true }])
+
+    await store.toggleUpvote(store.reviews[0])
+    await waitForFetchCalls(1)
+
+    await expect(getPendingLocalActions(studentScope)).resolves.toEqual([])
+    expect(store.hasBlockedReviewUpvote(10)).toBe(false)
+    expect(global.fetch).toHaveBeenCalledWith('/api/reviews/10/upvote', expect.objectContaining({
+      body: JSON.stringify({ upvoted: false })
+    }))
   })
 
   it('discards non-retriable failures, reconciles optimistic state, and notifies', async () => {

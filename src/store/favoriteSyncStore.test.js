@@ -163,12 +163,137 @@ describe('favorite sync store', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           desiredFavorite: true,
+          status: 'queued',
           attemptCount: 1,
           nextAttemptAt: expect.any(Number),
           lastError: 'Unable to update favorite'
         })
       })
     ])
+  })
+
+  it('blocks repeated retriable failures and skips blocked favorites during automatic replay', async () => {
+    const studentScope = getStudentViewerScope(7)
+    await savePendingLocalAction({
+      viewerScope: studentScope,
+      action: {
+        type: 'favorite',
+        targetKind: 'tutor',
+        targetId: 3,
+        desiredFavorite: true,
+        attemptCount: 2,
+        nextAttemptAt: 0,
+        status: 'queued'
+      }
+    })
+    global.fetch.mockResolvedValue(failedFavoriteResponse({ status: 503 }))
+
+    const userStore = useUserStore()
+    const favoriteSyncStore = useFavoriteSyncStore()
+    const notificationStore = useNotificationStore()
+    userStore.setUser({ id: 7, role: 'student' })
+
+    await favoriteSyncStore.replayPendingFavorites()
+
+    expect(favoriteSyncStore.hasPendingFavorite('tutor', 3)).toBe(true)
+    expect(favoriteSyncStore.isFavoriteSyncing('tutor', 3)).toBe(false)
+    expect(favoriteSyncStore.hasBlockedFavorite('tutor', 3)).toBe(true)
+    await expect(getPendingLocalActions(studentScope)).resolves.toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({
+          desiredFavorite: true,
+          status: 'blocked',
+          attemptCount: 3,
+          nextAttemptAt: 0,
+          lastError: 'Unable to update favorite'
+        })
+      })
+    ])
+    expect(notificationStore.notifications).toEqual([
+      expect.objectContaining({
+        message: 'Favorite could not be updated. Retry when your connection is stable.',
+        variant: 'warning'
+      })
+    ])
+
+    global.fetch.mockClear()
+    await favoriteSyncStore.replayPendingFavorites()
+
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('manually retries a blocked favorite through the normal replay path', async () => {
+    const studentScope = getStudentViewerScope(7)
+    await savePendingLocalAction({
+      viewerScope: studentScope,
+      action: {
+        type: 'favorite',
+        targetKind: 'course',
+        targetId: 1,
+        desiredFavorite: true,
+        attemptCount: 3,
+        nextAttemptAt: 0,
+        status: 'blocked'
+      }
+    })
+    global.fetch.mockResolvedValue(okFavoriteResponse({ id: 1, has_favorite: true }))
+
+    const userStore = useUserStore()
+    const favoriteSyncStore = useFavoriteSyncStore()
+    userStore.setUser({ id: 7, role: 'student' })
+    await favoriteSyncStore.refreshPendingFavorites()
+
+    await favoriteSyncStore.retryFavorite('course', 1)
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/me/favorite', expect.objectContaining({
+      body: JSON.stringify({
+        entity_type: 'course',
+        entity_id: 1,
+        favorite: true
+      })
+    }))
+    await expect(getPendingLocalActions(studentScope)).resolves.toEqual([])
+  })
+
+  it('reactivates a blocked favorite when the user overwrites the desired state', async () => {
+    const studentScope = getStudentViewerScope(7)
+    await savePendingLocalAction({
+      viewerScope: studentScope,
+      action: {
+        type: 'favorite',
+        targetKind: 'course',
+        targetId: 1,
+        desiredFavorite: true,
+        previousFavorite: false,
+        attemptCount: 3,
+        nextAttemptAt: 0,
+        status: 'blocked'
+      }
+    })
+    global.fetch.mockResolvedValue(okFavoriteResponse({ id: 1, has_favorite: false }))
+
+    const userStore = useUserStore()
+    const favoriteSyncStore = useFavoriteSyncStore()
+    userStore.setUser({ id: 7, role: 'student' })
+
+    await favoriteSyncStore.enqueueFavorite({
+      targetKind: 'course',
+      targetId: 1,
+      desiredFavorite: false,
+      previousFavorite: true,
+      entity: { id: 1, has_favorite: false }
+    })
+    await waitForFetchCalls(1)
+
+    await expect(getPendingLocalActions(studentScope)).resolves.toEqual([])
+    expect(favoriteSyncStore.hasBlockedFavorite('course', 1)).toBe(false)
+    expect(global.fetch).toHaveBeenCalledWith('/api/me/favorite', expect.objectContaining({
+      body: JSON.stringify({
+        entity_type: 'course',
+        entity_id: 1,
+        favorite: false
+      })
+    }))
   })
 
   it('discards non-retriable failures, reconciles optimistic state, and notifies', async () => {

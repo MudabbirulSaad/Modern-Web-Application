@@ -42,6 +42,7 @@ const entityLabel = computed(() => props.entityType === 'course' ? 'course' : 't
 const reviewLimitText = computed(() => canReview.value ? 'All reviews' : 'Top reviews')
 const isReviewAuthor = (review) => userStore.userId && Number(review.user_id) === Number(userStore.userId)
 const isReviewUpvotePending = (review) => reviewStore.isUpdatingReviewUpvote(review.id)
+const isReviewUpvoteBlocked = (review) => reviewStore.hasBlockedReviewUpvote(review.id)
 
 const upvoteLabel = (review) => `${review.upvotes} helpful vote${Number(review.upvotes) === 1 ? '' : 's'}`
 
@@ -123,6 +124,10 @@ const toggleUpvote = async (review) => {
   }
 
   await reviewStore.toggleUpvote(review)
+}
+
+const retryReviewUpvote = (review) => {
+  reviewStore.retryReviewUpvote(review.id)
 }
 
 watch(
@@ -343,6 +348,21 @@ watch(
           >
             Syncing
           </span>
+          <span
+            v-if="isReviewUpvoteBlocked(review)"
+            class="badge rounded-pill text-bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+            role="status"
+          >
+            Sync paused
+          </span>
+          <button
+            v-if="isReviewUpvoteBlocked(review)"
+            class="btn btn-link btn-sm p-0"
+            type="button"
+            @click="retryReviewUpvote(review)"
+          >
+            Retry
+          </button>
         </div>
       </BaseCard>
     </div>

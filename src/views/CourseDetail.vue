@@ -19,7 +19,10 @@ const notFound = ref(false)
 const tutors = computed(() => course.value?.tutors || [])
 const hasTutors = computed(() => tutors.value.length > 0)
 const favoriteLoading = computed(() => (
-  course.value ? favoriteSyncStore.hasPendingFavorite('course', course.value.id) : false
+  course.value ? favoriteSyncStore.isFavoriteSyncing('course', course.value.id) : false
+))
+const favoriteBlocked = computed(() => (
+  course.value ? favoriteSyncStore.hasBlockedFavorite('course', course.value.id) : false
 ))
 
 onMounted(async () => {
@@ -81,6 +84,12 @@ const toggleFavorite = async () => {
     favoriteError.value = 'Favorite could not be updated. Please try again.'
   }
 }
+
+const retryFavorite = () => {
+  if (course.value) {
+    favoriteSyncStore.retryFavorite('course', course.value.id)
+  }
+}
 </script>
 
 <template>
@@ -117,7 +126,9 @@ const toggleFavorite = async () => {
               v-if="userStore.isStudent"
               :active="course.has_favorite"
               :loading="favoriteLoading"
+              :blocked="favoriteBlocked"
               @toggle="toggleFavorite"
+              @retry="retryFavorite"
             />
           </div>
         </template>
