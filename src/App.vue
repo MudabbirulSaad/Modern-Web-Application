@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 import { useRouter } from 'vue-router'
+import CommandPalette from './components/CommandPalette.vue'
 import { useNotificationStore } from './store/notificationStore'
 import { useUserStore } from './store/userStore'
 
@@ -83,6 +84,8 @@ onMounted(() => {
       </div>
     </div>
   </nav>
+
+  <CommandPalette />
 
   <main class="container py-4">
     <div
