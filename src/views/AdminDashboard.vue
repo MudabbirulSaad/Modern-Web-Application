@@ -14,6 +14,7 @@ const error = ref('')
 const success = ref('')
 const editingTutorId = ref(null)
 const editingCourseId = ref(null)
+const activeAdminTab = ref('courses')
 
 const tutorForm = reactive({
   name: '',
@@ -109,6 +110,7 @@ const loadCourses = async () => {
 }
 
 const editTutor = (tutor) => {
+  activeAdminTab.value = 'tutors'
   editingTutorId.value = tutor.id
   tutorForm.name = tutor.name
   tutorForm.department = tutor.department
@@ -118,6 +120,7 @@ const editTutor = (tutor) => {
 }
 
 const editCourse = async (course) => {
+  activeAdminTab.value = 'courses'
   editingCourseId.value = course.id
   courseForm.title = course.title
   courseForm.department = course.department
@@ -309,9 +312,39 @@ onMounted(() => {
       {{ success }}
     </div>
 
+    <div class="admin-tabs mb-4" role="tablist" aria-label="Admin management sections">
+      <button
+        class="admin-tab"
+        :class="{ active: activeAdminTab === 'courses' }"
+        type="button"
+        role="tab"
+        :aria-selected="activeAdminTab === 'courses'"
+        aria-controls="course-admin-panel"
+        @click="activeAdminTab = 'courses'"
+      >
+        Courses
+      </button>
+      <button
+        class="admin-tab"
+        :class="{ active: activeAdminTab === 'tutors' }"
+        type="button"
+        role="tab"
+        :aria-selected="activeAdminTab === 'tutors'"
+        aria-controls="tutor-admin-panel"
+        @click="activeAdminTab = 'tutors'"
+      >
+        Tutors
+      </button>
+    </div>
+
     <div class="vstack gap-4">
-      <section aria-labelledby="course-admin-heading">
-        <h2 id="course-admin-heading" class="h3 mb-3">Courses</h2>
+      <section
+        v-show="activeAdminTab === 'courses'"
+        id="course-admin-panel"
+        aria-labelledby="course-admin-heading"
+        role="tabpanel"
+      >
+        <h2 id="course-admin-heading" class="h3 mb-3">Course management</h2>
         <div class="row g-4">
           <div class="col-12 col-lg-5">
             <BaseCard>
@@ -375,13 +408,13 @@ onMounted(() => {
                 </fieldset>
 
                 <div class="d-flex flex-column flex-sm-row gap-2">
-                  <button class="btn btn-primary" type="submit" :disabled="courseSaving">
+                  <button class="btn btn-directory-action" type="submit" :disabled="courseSaving">
                     <span v-if="courseSaving" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
                     {{ courseSaving ? 'Saving' : isEditingCourse ? 'Update course' : 'Create course' }}
                   </button>
                   <button
                     v-if="isEditingCourse"
-                    class="btn btn-outline-secondary"
+                    class="btn btn-directory-action-secondary"
                     type="button"
                     :disabled="courseSaving"
                     @click="resetCourseForm"
@@ -428,15 +461,20 @@ onMounted(() => {
                       <td>{{ course.tutor_names || 'Unassigned' }}</td>
                       <td>
                         <div class="d-flex justify-content-end gap-2">
-                          <button class="btn btn-outline-primary btn-sm" type="button" @click="editCourse(course)">
+                          <button class="btn btn-directory-action-secondary btn-sm" type="button" @click="editCourse(course)">
                             Edit
                           </button>
                           <button
-                            class="btn btn-outline-danger btn-sm"
+                            class="btn btn-directory-action-danger btn-sm"
                             type="button"
                             :disabled="deletingCourseId === course.id"
                             @click="deleteCourse(course)"
                           >
+                            <span
+                              v-if="deletingCourseId === course.id"
+                              class="spinner-border spinner-border-sm me-2"
+                              aria-hidden="true"
+                            ></span>
                             {{ deletingCourseId === course.id ? 'Deleting' : 'Delete' }}
                           </button>
                         </div>
@@ -450,8 +488,13 @@ onMounted(() => {
         </div>
       </section>
 
-      <section aria-labelledby="tutor-admin-heading">
-        <h2 id="tutor-admin-heading" class="h3 mb-3">Tutors</h2>
+      <section
+        v-show="activeAdminTab === 'tutors'"
+        id="tutor-admin-panel"
+        aria-labelledby="tutor-admin-heading"
+        role="tabpanel"
+      >
+        <h2 id="tutor-admin-heading" class="h3 mb-3">Tutor management</h2>
         <div class="row g-4">
           <div class="col-12 col-lg-5">
             <BaseCard>
@@ -494,13 +537,13 @@ onMounted(() => {
                 </div>
 
                 <div class="d-flex flex-column flex-sm-row gap-2">
-                  <button class="btn btn-primary" type="submit" :disabled="tutorSaving">
+                  <button class="btn btn-directory-action" type="submit" :disabled="tutorSaving">
                     <span v-if="tutorSaving" class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
                     {{ tutorSaving ? 'Saving' : isEditingTutor ? 'Update tutor' : 'Create tutor' }}
                   </button>
                   <button
                     v-if="isEditingTutor"
-                    class="btn btn-outline-secondary"
+                    class="btn btn-directory-action-secondary"
                     type="button"
                     :disabled="tutorSaving"
                     @click="resetTutorForm"
@@ -547,15 +590,20 @@ onMounted(() => {
                       <td>{{ tutor.department }}</td>
                       <td>
                         <div class="d-flex justify-content-end gap-2">
-                          <button class="btn btn-outline-primary btn-sm" type="button" @click="editTutor(tutor)">
+                          <button class="btn btn-directory-action-secondary btn-sm" type="button" @click="editTutor(tutor)">
                             Edit
                           </button>
                           <button
-                            class="btn btn-outline-danger btn-sm"
+                            class="btn btn-directory-action-danger btn-sm"
                             type="button"
                             :disabled="deletingTutorId === tutor.id"
                             @click="deleteTutor(tutor)"
                           >
+                            <span
+                              v-if="deletingTutorId === tutor.id"
+                              class="spinner-border spinner-border-sm me-2"
+                              aria-hidden="true"
+                            ></span>
                             {{ deletingTutorId === tutor.id ? 'Deleting' : 'Delete' }}
                           </button>
                         </div>
@@ -580,5 +628,46 @@ onMounted(() => {
 
 .record-summary {
   max-width: 34rem;
+}
+
+.admin-tabs {
+  display: inline-flex;
+  gap: 0.35rem;
+  padding: 0.35rem;
+  border: 1px solid rgba(var(--swinburne-punch-rgb), 0.18);
+  border-radius: 999px;
+  background: var(--bs-body-bg);
+  box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.06);
+}
+
+.admin-tab {
+  min-width: 8.5rem;
+  padding: 0.65rem 1.25rem;
+  border: 0;
+  border-radius: 999px;
+  color: var(--bs-body-color);
+  background: transparent;
+  font-weight: 800;
+  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.admin-tab:hover {
+  color: var(--swinburne-punch);
+}
+
+.admin-tab.active {
+  color: var(--swinburne-white);
+  background: var(--swinburne-punch);
+  box-shadow: 0 0.65rem 1.25rem rgba(var(--swinburne-punch-rgb), 0.22);
+}
+
+.admin-tab:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 0.25rem var(--swinburne-focus-ring);
+}
+
+[data-bs-theme="dark"] .admin-tabs {
+  background: var(--bs-surface-color);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 </style>
