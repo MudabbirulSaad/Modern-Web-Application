@@ -2,9 +2,11 @@
 import { onMounted } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 import { useRouter } from 'vue-router'
+import { useNotificationStore } from './store/notificationStore'
 import { useUserStore } from './store/userStore'
 
 const userStore = useUserStore()
+const notificationStore = useNotificationStore()
 const router = useRouter()
 
 const logout = async () => {
@@ -83,6 +85,28 @@ onMounted(() => {
   </nav>
 
   <main class="container py-4">
+    <div
+      v-if="notificationStore.notifications.length"
+      class="app-notifications"
+      aria-live="polite"
+      aria-atomic="false"
+    >
+      <div
+        v-for="notification in notificationStore.notifications"
+        :key="notification.id"
+        :class="['alert', `alert-${notification.variant}`, 'alert-dismissible', 'fade', 'show', 'shadow-sm']"
+        role="alert"
+      >
+        {{ notification.message }}
+        <button
+          type="button"
+          class="btn-close"
+          aria-label="Dismiss notification"
+          @click="notificationStore.dismiss(notification.id)"
+        ></button>
+      </div>
+    </div>
+
     <RouterView v-slot="{ Component }">
       <transition name="fade" mode="out-in">
         <component :is="Component" />
@@ -135,5 +159,19 @@ onMounted(() => {
 
 .theme-toggle-btn:focus-visible {
   box-shadow: 0 0 0 0.25rem var(--swinburne-focus-ring);
+}
+
+.app-notifications {
+  position: fixed;
+  top: 5rem;
+  right: 1rem;
+  z-index: 1080;
+  display: grid;
+  gap: 0.75rem;
+  width: min(24rem, calc(100vw - 2rem));
+}
+
+.app-notifications .alert {
+  margin: 0;
 }
 </style>

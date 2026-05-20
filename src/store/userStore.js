@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { apiRequest } from '../api/client'
 
 let sessionRequest = null
 const themeModes = ['light', 'dark', 'auto']
@@ -32,6 +33,10 @@ export const useUserStore = defineStore('user', {
       this.role = null
       this.loggedIn = false
     },
+    invalidateSession() {
+      this.clearUser()
+      this.sessionInitialized = true
+    },
     async initializeSession() {
       if (this.sessionInitialized) {
         return this.user
@@ -44,27 +49,18 @@ export const useUserStore = defineStore('user', {
       this.loading = true
       this.error = null
 
-      sessionRequest = fetch('/api/auth/session', {
-        method: 'GET',
-        credentials: 'include'
+      sessionRequest = apiRequest('/api/auth/session', {
+        method: 'GET'
       })
-        .then(async (response) => {
-          const payload = await response.json()
-
-          if (response.status === 401) {
-            this.clearUser()
-            return null
-          }
-
-          if (!response.ok) {
-            throw new Error(payload.message || 'Unable to restore session')
-          }
-
-          this.setUser(payload.data)
-          return payload.data
+        .then((userData) => {
+          this.setUser(userData)
+          return userData
         })
         .catch((err) => {
           this.clearUser()
+          if (err.status === 401) {
+            return null
+          }
           this.error = err.message || 'Unable to restore session'
           return null
         })
@@ -81,23 +77,17 @@ export const useUserStore = defineStore('user', {
       this.error = null
 
       try {
-        const response = await fetch('/api/auth/login', {
+        const userData = await apiRequest('/api/auth/login', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          credentials: 'include',
           body: JSON.stringify(credentials)
         })
-        const payload = await response.json()
 
-        if (!response.ok) {
-          throw new Error(payload.message || 'Unable to log in')
-        }
-
-        this.setUser(payload.data)
+        this.setUser(userData)
         this.sessionInitialized = true
-        return payload.data
+        return userData
       } catch (err) {
         this.clearUser()
         this.error = err.message || 'Login failed. Please try again.'
@@ -111,18 +101,11 @@ export const useUserStore = defineStore('user', {
       this.error = null
 
       try {
-        const response = await fetch('/api/auth/logout', {
-          method: 'POST',
-          credentials: 'include'
+        await apiRequest('/api/auth/logout', {
+          method: 'POST'
         })
 
-        if (!response.ok) {
-          const payload = await response.json()
-          throw new Error(payload.message || 'Unable to log out')
-        }
-
-        this.clearUser()
-        this.sessionInitialized = true
+        this.invalidateSession()
       } catch (err) {
         this.error = err.message || 'Unable to log out'
         throw err
