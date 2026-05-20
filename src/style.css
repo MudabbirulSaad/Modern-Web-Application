@@ -6,12 +6,19 @@
   --swinburne-white: #FFFFFF;
   --swinburne-supernova: #FECE00;
   --swinburne-red-berry: #900000;
+  --swinburne-red-berry-rgb: 144, 0, 0;
+  --swinburne-focus-ring: rgba(220, 46, 39, 0.35);
+  --swinburne-disabled-bg: #A8A8A8;
+  --swinburne-disabled-border: #8E8E8E;
 
   /* Bootstrap Overrides */
   --bs-primary: var(--swinburne-punch);
   --bs-primary-rgb: var(--swinburne-punch-rgb);
   --bs-link-color: var(--swinburne-punch);
+  --bs-link-color-rgb: var(--swinburne-punch-rgb);
   --bs-link-hover-color: var(--swinburne-red-berry);
+  --bs-link-hover-color-rgb: var(--swinburne-red-berry-rgb);
+  --bs-focus-ring-color: var(--swinburne-focus-ring);
 }
 
 /* Typography */
@@ -35,11 +42,92 @@ h1, h2, h3, h4, h5, h6 {
 [data-bs-theme="dark"] {
   --bs-body-bg: #121212;
   --bs-surface-color: #1E1E1E;
+  --bs-link-color: #FF6B65;
+  --bs-link-color-rgb: 255, 107, 101;
+  --bs-link-hover-color: #FFFFFF;
+  --bs-link-hover-color-rgb: 255, 255, 255;
+  --swinburne-focus-ring: rgba(254, 206, 0, 0.4);
 }
 
 /* Custom UI Components Base Styling */
 .rounded-4 {
   border-radius: 1rem !important;
+}
+
+/* Brand-aligned Bootstrap button states */
+.btn-primary {
+  --bs-btn-color: var(--swinburne-white);
+  --bs-btn-bg: var(--swinburne-punch);
+  --bs-btn-border-color: var(--swinburne-punch);
+  --bs-btn-hover-color: var(--swinburne-white);
+  --bs-btn-hover-bg: var(--swinburne-red-berry);
+  --bs-btn-hover-border-color: var(--swinburne-red-berry);
+  --bs-btn-focus-shadow-rgb: var(--swinburne-punch-rgb);
+  --bs-btn-active-color: var(--swinburne-white);
+  --bs-btn-active-bg: var(--swinburne-red-berry);
+  --bs-btn-active-border-color: var(--swinburne-red-berry);
+  --bs-btn-active-shadow: inset 0 3px 5px rgba(0, 0, 0, 0.2);
+  --bs-btn-disabled-color: var(--swinburne-white);
+  --bs-btn-disabled-bg: var(--swinburne-disabled-bg);
+  --bs-btn-disabled-border-color: var(--swinburne-disabled-border);
+}
+
+.btn-outline-primary {
+  --bs-btn-color: var(--swinburne-punch);
+  --bs-btn-border-color: var(--swinburne-punch);
+  --bs-btn-hover-color: var(--swinburne-white);
+  --bs-btn-hover-bg: var(--swinburne-punch);
+  --bs-btn-hover-border-color: var(--swinburne-punch);
+  --bs-btn-focus-shadow-rgb: var(--swinburne-punch-rgb);
+  --bs-btn-active-color: var(--swinburne-white);
+  --bs-btn-active-bg: var(--swinburne-red-berry);
+  --bs-btn-active-border-color: var(--swinburne-red-berry);
+  --bs-btn-disabled-color: var(--swinburne-disabled-border);
+  --bs-btn-disabled-bg: transparent;
+  --bs-btn-disabled-border-color: var(--swinburne-disabled-border);
+}
+
+.btn-link {
+  --bs-btn-color: var(--swinburne-punch);
+  --bs-btn-hover-color: var(--swinburne-red-berry);
+  --bs-btn-active-color: var(--swinburne-red-berry);
+  --bs-btn-disabled-color: var(--swinburne-disabled-border);
+  --bs-btn-focus-shadow-rgb: var(--swinburne-punch-rgb);
+}
+
+[data-bs-theme="dark"] .btn-primary {
+  --bs-btn-color: var(--swinburne-white);
+  --bs-btn-bg: var(--swinburne-punch);
+  --bs-btn-border-color: var(--swinburne-punch);
+  --bs-btn-hover-color: var(--swinburne-white);
+  --bs-btn-hover-bg: #B51C18;
+  --bs-btn-hover-border-color: #FF6B65;
+  --bs-btn-focus-shadow-rgb: 254, 206, 0;
+  --bs-btn-active-color: var(--swinburne-white);
+  --bs-btn-active-bg: var(--swinburne-red-berry);
+  --bs-btn-active-border-color: #FF6B65;
+}
+
+[data-bs-theme="dark"] .btn-outline-primary {
+  --bs-btn-color: #FF6B65;
+  --bs-btn-border-color: #FF6B65;
+  --bs-btn-hover-color: var(--swinburne-black);
+  --bs-btn-hover-bg: var(--swinburne-white);
+  --bs-btn-hover-border-color: var(--swinburne-white);
+  --bs-btn-focus-shadow-rgb: 254, 206, 0;
+  --bs-btn-active-color: var(--swinburne-white);
+  --bs-btn-active-bg: var(--swinburne-red-berry);
+  --bs-btn-active-border-color: #FF6B65;
+  --bs-btn-disabled-color: #8F8F8F;
+  --bs-btn-disabled-border-color: #6C6C6C;
+}
+
+[data-bs-theme="dark"] .btn-link {
+  --bs-btn-color: var(--swinburne-white);
+  --bs-btn-hover-color: #FF6B65;
+  --bs-btn-active-color: var(--swinburne-supernova);
+  --bs-btn-disabled-color: #8F8F8F;
+  --bs-btn-focus-shadow-rgb: 254, 206, 0;
 }
 
 /* Transition classes for page navigation */
