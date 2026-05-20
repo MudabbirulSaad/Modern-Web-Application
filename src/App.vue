@@ -47,6 +47,9 @@ onMounted(() => {
           <li class="nav-item">
             <RouterLink class="nav-link px-3" active-class="active" to="/tutors">Tutors</RouterLink>
           </li>
+          <li v-if="userStore.isStudent" class="nav-item">
+            <RouterLink class="nav-link px-3" active-class="active" to="/dashboard">Dashboard</RouterLink>
+          </li>
           <li v-if="userStore.isAdmin" class="nav-item">
             <RouterLink class="nav-link px-3" active-class="active" to="/admin">Admin</RouterLink>
           </li>

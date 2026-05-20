@@ -7,6 +7,7 @@ import TutorDetail from '../views/TutorDetail.vue'
 import Register from '../views/Register.vue'
 import Login from '../views/Login.vue'
 import AdminDashboard from '../views/AdminDashboard.vue'
+import StudentDashboard from '../views/StudentDashboard.vue'
 import { useUserStore } from '../store/userStore'
 
 const routes = [
@@ -46,6 +47,14 @@ const routes = [
     component: Login
   },
   {
+    path: '/dashboard',
+    name: 'student-dashboard',
+    component: StudentDashboard,
+    meta: {
+      requiresStudent: true
+    }
+  },
+  {
     path: '/admin',
     name: 'admin-dashboard',
     component: AdminDashboard,
@@ -61,7 +70,7 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  if (!to.meta.requiresAdmin) {
+  if (!to.meta.requiresAdmin && !to.meta.requiresStudent) {
     return true
   }
 
@@ -71,7 +80,11 @@ router.beforeEach((to) => {
     return { name: 'login' }
   }
 
-  if (!userStore.isAdmin) {
+  if (to.meta.requiresStudent && !userStore.isStudent) {
+    return { name: 'home' }
+  }
+
+  if (to.meta.requiresAdmin && !userStore.isAdmin) {
     return { name: 'home' }
   }
 

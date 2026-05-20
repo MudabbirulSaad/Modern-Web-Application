@@ -1447,6 +1447,52 @@ describe('Review endpoints', () => {
 
     spy.mockRestore();
   });
+
+  it('should return the authenticated student review history', async () => {
+    const reviewHistory = [
+      {
+        id: 22,
+        user_id: 7,
+        username: 'studentone',
+        entity_type: 'course',
+        entity_id: 3,
+        entity_title: 'SWE30003 Software Architectures and Design',
+        entity_department: 'Software Engineering',
+        rating: 5,
+        comment: 'Clear architecture examples.',
+        upvotes: 2,
+        created_at: '2026-05-18T00:00:00.000Z'
+      }
+    ];
+    const mockConn = {
+      query: jest.fn().mockResolvedValue(reviewHistory),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/users/7/reviews')
+      .set('Cookie', studentCookie());
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: reviewHistory });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      expect.stringContaining('LEFT JOIN Courses c ON r.entity_type = "course" AND c.id = r.entity_id'),
+      [7]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should reject review history for another user id', async () => {
+    const res = await request(app)
+      .get('/api/users/8/reviews')
+      .set('Cookie', studentCookie());
+
+    expect(res.statusCode).toEqual(403);
+    expect(res.body).toEqual({ status: 'error', message: 'Cannot access another user dashboard' });
+  });
 });
 
 describe('Favorite endpoints', () => {
@@ -1508,6 +1554,66 @@ describe('Favorite endpoints', () => {
     spy.mockRestore();
   });
 
+  it('should return the authenticated student favorite tutors and courses', async () => {
+    const favoriteTutors = [
+      {
+        id: 2,
+        name: 'Prof Liam Patel',
+        department: 'Information Systems',
+        bio: 'Teaches database design.',
+        created_at: '2026-05-18T00:00:00.000Z',
+        updated_at: '2026-05-18T00:00:00.000Z',
+        has_favorite: true
+      }
+    ];
+    const favoriteCourses = [
+      {
+        id: 3,
+        title: 'SWE30003 Software Architectures and Design',
+        department: 'Software Engineering',
+        description: 'Explore architectural patterns.',
+        created_at: '2026-05-18T00:00:00.000Z',
+        updated_at: '2026-05-18T00:00:00.000Z',
+        tutor_ids: '1,3',
+        tutor_names: 'Dr Maya Chen, Dr Amelia Wright',
+        has_favorite: true
+      }
+    ];
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce(favoriteTutors)
+        .mockResolvedValueOnce(favoriteCourses),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/users/7/favorites')
+      .set('Cookie', studentCookie());
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: {
+        tutors: favoriteTutors,
+        courses: favoriteCourses
+      }
+    });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('INNER JOIN Tutors t ON t.id = f.entity_id'),
+      [7]
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('INNER JOIN Courses c ON c.id = f.entity_id'),
+      [7]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
   it('should remove a saved favorite for the authenticated student', async () => {
     const mockConn = {
       query: jest.fn().mockResolvedValue({ affectedRows: 1 }),
@@ -1545,6 +1651,15 @@ describe('Favorite endpoints', () => {
 
     expect(res.statusCode).toEqual(403);
     expect(res.body).toEqual({ status: 'error', message: 'Cannot manage favorites for another user' });
+  });
+
+  it('should reject reading favorites for another user id', async () => {
+    const res = await request(app)
+      .get('/api/users/8/favorites')
+      .set('Cookie', studentCookie());
+
+    expect(res.statusCode).toEqual(403);
+    expect(res.body).toEqual({ status: 'error', message: 'Cannot access another user dashboard' });
   });
 
   it('should reject favorites from non-students', async () => {
