@@ -10,6 +10,7 @@ import { initializeLocalCache } from './api/localCache'
 import { useOnlineStore } from './store/onlineStore'
 import { useUserStore } from './store/userStore'
 import { useFavoriteSyncStore } from './store/favoriteSyncStore'
+import { registerServiceWorker } from './pwa/registerServiceWorker'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -35,4 +36,5 @@ userStore.initializeSession().finally(() => {
   void favoriteSyncStore.refreshPendingFavorites()
   void favoriteSyncStore.replayPendingFavorites()
   app.mount('#app')
+  registerServiceWorker()
 })
