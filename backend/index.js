@@ -174,6 +174,206 @@ const readPagination = (query) => {
 
 const readTotalCount = (rows) => Number(rows?.[0]?.total || 0);
 
+const SMART_NAV_MAX_INTENT_LENGTH = 500;
+const SMART_NAV_RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const SMART_NAV_RATE_LIMIT_MAX = 10;
+const SMART_NAV_MIN_CONFIDENCE = 0.5;
+const SMART_NAV_ALLOWED_ACTIONS = new Set(['NAVIGATE', 'FILTER', 'SEARCH', 'NONE']);
+const SMART_NAV_ROUTE_DOMAIN_MAP = new Map([
+  ['/', null],
+  ['/tutors', 'tutors'],
+  ['/courses', 'courses']
+]);
+const SMART_NAV_ALLOWED_FILTERS = new Set(['search', 'department']);
+const smartNavigationRateLimit = new Map();
+
+const SMART_NAVIGATION_SCHEMA = {
+  actions: ['NAVIGATE', 'FILTER', 'SEARCH', 'NONE'],
+  routeDomainPairs: [
+    { route: '/', domain: null },
+    { route: '/tutors', domain: 'tutors' },
+    { route: '/courses', domain: 'courses' }
+  ],
+  filters: {
+    search: 'string',
+    department: 'string'
+  },
+  responseShape: {
+    action: 'NAVIGATE | FILTER | SEARCH | NONE',
+    route: '/ | /tutors | /courses | null',
+    domain: 'tutors | courses | null (must match the route pair)',
+    filters: {
+      search: 'optional string',
+      department: 'optional string'
+    },
+    confidence: 'number between 0 and 1',
+    reason: 'short string'
+  }
+};
+
+const noneSmartNavigationCommand = (reason, confidence = 0) => ({
+  action: 'NONE',
+  route: null,
+  domain: null,
+  filters: {},
+  confidence,
+  reason
+});
+
+const readSmartNavigationRateLimitKey = (req) => {
+  const forwardedFor = String(req.get('x-forwarded-for') || '').split(',')[0].trim();
+  return forwardedFor || req.ip || req.socket?.remoteAddress || 'unknown';
+};
+
+const isSmartNavigationRateLimited = (req) => {
+  const key = readSmartNavigationRateLimitKey(req);
+  const now = Date.now();
+  const existing = smartNavigationRateLimit.get(key) || [];
+  const recentRequests = existing.filter((timestamp) => now - timestamp < SMART_NAV_RATE_LIMIT_WINDOW_MS);
+
+  if (recentRequests.length >= SMART_NAV_RATE_LIMIT_MAX) {
+    smartNavigationRateLimit.set(key, recentRequests);
+    return true;
+  }
+
+  recentRequests.push(now);
+  smartNavigationRateLimit.set(key, recentRequests);
+  return false;
+};
+
+const readSmartNavigationIntent = (body) => {
+  if (!body || typeof body.intent !== 'string' || body.intent.trim().length === 0) {
+    return { error: 'Intent is required' };
+  }
+
+  const intent = body.intent.trim();
+
+  if (intent.length > SMART_NAV_MAX_INTENT_LENGTH) {
+    return { error: `Intent must be ${SMART_NAV_MAX_INTENT_LENGTH} characters or fewer` };
+  }
+
+  return { intent };
+};
+
+const sanitizeSmartNavigationFilters = (filters) => {
+  if (!filters || typeof filters !== 'object' || Array.isArray(filters)) {
+    return {};
+  }
+
+  return Object.entries(filters).reduce((safeFilters, [key, value]) => {
+    if (!SMART_NAV_ALLOWED_FILTERS.has(key) || typeof value !== 'string') {
+      return safeFilters;
+    }
+
+    const safeValue = value.trim().slice(0, 100);
+
+    if (safeValue) {
+      safeFilters[key] = safeValue;
+    }
+
+    return safeFilters;
+  }, {});
+};
+
+const sanitizeSmartNavigationCommand = (command) => {
+  if (!command || typeof command !== 'object' || Array.isArray(command)) {
+    return noneSmartNavigationCommand('Unsupported navigation command');
+  }
+
+  const action = String(command.action || '').trim().toUpperCase();
+  const confidence = Math.max(0, Math.min(Number(command.confidence) || 0, 1));
+
+  if (!SMART_NAV_ALLOWED_ACTIONS.has(action)) {
+    return noneSmartNavigationCommand('Unsupported navigation command');
+  }
+
+  if (action === 'NONE') {
+    return noneSmartNavigationCommand(
+      typeof command.reason === 'string' && command.reason.trim()
+        ? command.reason.trim().slice(0, 160)
+        : 'No supported navigation command',
+      confidence
+    );
+  }
+
+  if (confidence < SMART_NAV_MIN_CONFIDENCE) {
+    return noneSmartNavigationCommand('Low confidence', confidence);
+  }
+
+  const route = typeof command.route === 'string' ? command.route.trim() : '';
+  const domain = typeof command.domain === 'string' && command.domain.trim()
+    ? command.domain.trim()
+    : null;
+
+  if (!SMART_NAV_ROUTE_DOMAIN_MAP.has(route)) {
+    return noneSmartNavigationCommand('Unsupported navigation command');
+  }
+
+  if (SMART_NAV_ROUTE_DOMAIN_MAP.get(route) !== domain) {
+    return noneSmartNavigationCommand('Unsupported navigation command');
+  }
+
+  return {
+    action,
+    route,
+    domain,
+    filters: sanitizeSmartNavigationFilters(command.filters),
+    confidence,
+    reason: typeof command.reason === 'string' && command.reason.trim()
+      ? command.reason.trim().slice(0, 160)
+      : 'Navigation command parsed'
+  };
+};
+
+const parseGroqSmartNavigationContent = (content) => {
+  const rawContent = String(content || '').trim();
+  const fencedJson = rawContent.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  return JSON.parse(fencedJson ? fencedJson[1] : rawContent);
+};
+
+const requestSmartNavigationCommand = async (intent) => {
+  const apiKey = process.env.GROQ_API_KEY;
+  const model = process.env.GROQ_MODEL;
+
+  if (!apiKey || !model) {
+    return noneSmartNavigationCommand('Smart navigation is unavailable');
+  }
+
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content: 'Parse the user intent into exactly one JSON smart-navigation command. Return JSON only. Use only the provided schema. Do not invent routes, domains, filters, or actions.'
+        },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            intent,
+            schema: SMART_NAVIGATION_SCHEMA
+          })
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    return noneSmartNavigationCommand('Unable to parse navigation intent');
+  }
+
+  const payload = await response.json();
+  const content = payload?.choices?.[0]?.message?.content;
+  return sanitizeSmartNavigationCommand(parseGroqSmartNavigationContent(content));
+};
+
 const readDirectorySort = (query) => {
   const sort = String(query.sort || '').trim().toLowerCase();
 
@@ -546,6 +746,30 @@ app.get('/api/db-test', async (req, res) => {
     res.status(500).json({ status: 'error', message: 'Database connection failed' });
   } finally {
     if (conn) conn.release();
+  }
+});
+
+app.post('/api/smart-navigation', async (req, res) => {
+  const { intent, error } = readSmartNavigationIntent(req.body);
+
+  if (error) {
+    res.status(400).json({ status: 'error', message: error });
+    return;
+  }
+
+  if (isSmartNavigationRateLimited(req)) {
+    res.status(429).json({ status: 'error', message: 'Too many smart-navigation requests' });
+    return;
+  }
+
+  try {
+    const command = await requestSmartNavigationCommand(intent);
+    res.json({ status: 'ok', data: command });
+  } catch (err) {
+    res.json({
+      status: 'ok',
+      data: noneSmartNavigationCommand('Unable to parse navigation intent')
+    });
   }
 });
 

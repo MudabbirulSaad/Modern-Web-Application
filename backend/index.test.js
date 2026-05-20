@@ -9,6 +9,50 @@ afterAll(async () => {
   await pool.end();
 });
 
+const withGroqConfig = (fn) => async () => {
+  const originalApiKey = process.env.GROQ_API_KEY;
+  const originalModel = process.env.GROQ_MODEL;
+
+  process.env.GROQ_API_KEY = 'test-groq-key';
+  process.env.GROQ_MODEL = 'llama-test';
+
+  try {
+    await fn();
+  } finally {
+    if (originalApiKey === undefined) {
+      delete process.env.GROQ_API_KEY;
+    } else {
+      process.env.GROQ_API_KEY = originalApiKey;
+    }
+
+    if (originalModel === undefined) {
+      delete process.env.GROQ_MODEL;
+    } else {
+      process.env.GROQ_MODEL = originalModel;
+    }
+  }
+};
+
+const mockGroqCommand = (command) => {
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    json: jest.fn().mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify(command)
+          }
+        }
+      ]
+    })
+  });
+};
+
+const smartNavStudentCookie = () => {
+  const token = jwt.sign({ id: 7, role: 'student' }, process.env.JWT_SECRET || 'development-jwt-secret');
+  return [`auth_token=${token}`];
+};
+
 describe('GET /api/health', () => {
   it('should return status ok', async () => {
     const res = await request(app).get('/api/health');
@@ -42,6 +86,308 @@ describe('GET /api/db-test', () => {
     
     spy.mockRestore();
   });
+});
+
+describe('POST /api/smart-navigation', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it('should return NONE when Groq configuration is missing', async () => {
+    const originalApiKey = process.env.GROQ_API_KEY;
+    const originalModel = process.env.GROQ_MODEL;
+    delete process.env.GROQ_API_KEY;
+    delete process.env.GROQ_MODEL;
+    global.fetch = jest.fn();
+
+    const res = await request(app)
+      .post('/api/smart-navigation')
+      .send({ intent: 'find computer science tutors' });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: {
+        action: 'NONE',
+        route: null,
+        domain: null,
+        filters: {},
+        confidence: 0,
+        reason: 'Smart navigation is unavailable'
+      }
+    });
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    if (originalApiKey === undefined) {
+      delete process.env.GROQ_API_KEY;
+    } else {
+      process.env.GROQ_API_KEY = originalApiKey;
+    }
+
+    if (originalModel === undefined) {
+      delete process.env.GROQ_MODEL;
+    } else {
+      process.env.GROQ_MODEL = originalModel;
+    }
+  });
+
+  it('should reject missing or invalid intent before calling Groq', withGroqConfig(async () => {
+    global.fetch = jest.fn();
+
+    const missingRes = await request(app)
+      .post('/api/smart-navigation')
+      .send({});
+    const longRes = await request(app)
+      .post('/api/smart-navigation')
+      .send({ intent: 'x'.repeat(501) });
+
+    expect(missingRes.statusCode).toEqual(400);
+    expect(missingRes.body).toEqual({ status: 'error', message: 'Intent is required' });
+    expect(longRes.statusCode).toEqual(400);
+    expect(longRes.body).toEqual({ status: 'error', message: 'Intent must be 500 characters or fewer' });
+    expect(global.fetch).not.toHaveBeenCalled();
+  }));
+
+  it('should sanitize Groq output into the closed command schema and strip extra fields', withGroqConfig(async () => {
+    mockGroqCommand({
+      action: 'NAVIGATE',
+      route: '/tutors',
+      domain: 'tutors',
+      filters: {
+        search: 'maya',
+        department: 'Computer Science',
+        role: 'admin'
+      },
+      confidence: 0.92,
+      reason: 'Tutor directory matches',
+      jwt: 'secret',
+      userId: 7
+    });
+
+    const res = await request(app)
+      .post('/api/smart-navigation')
+      .set('Cookie', smartNavStudentCookie())
+      .send({ intent: 'show me computer science tutors named maya' });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: {
+        action: 'NAVIGATE',
+        route: '/tutors',
+        domain: 'tutors',
+        filters: {
+          search: 'maya',
+          department: 'Computer Science'
+        },
+        confidence: 0.92,
+        reason: 'Tutor directory matches'
+      }
+    });
+    expect(Object.keys(res.body.data)).toEqual(['action', 'route', 'domain', 'filters', 'confidence', 'reason']);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const requestBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(JSON.stringify(requestBody)).toContain('show me computer science tutors named maya');
+    expect(JSON.stringify(requestBody)).not.toContain('auth_token');
+    expect(JSON.stringify(requestBody)).not.toContain('secret');
+    expect(JSON.stringify(requestBody)).not.toContain('"userId"');
+  }));
+
+  it('should resolve unsupported actions, invalid enums, missing keys, and low confidence to NONE', withGroqConfig(async () => {
+    mockGroqCommand({
+      action: 'DELETE',
+      route: '/admin',
+      domain: 'users',
+      filters: { search: 'anything' },
+      confidence: 0.99,
+      reason: 'Unsafe'
+    });
+
+    const invalidRes = await request(app)
+      .post('/api/smart-navigation')
+      .send({ intent: 'delete a user' });
+
+    mockGroqCommand({
+      action: 'NAVIGATE',
+      route: '/admin',
+      domain: 'courses',
+      filters: { search: 'private' },
+      confidence: 0.91,
+      reason: 'Invalid route'
+    });
+
+    const invalidEnumRes = await request(app)
+      .post('/api/smart-navigation')
+      .send({ intent: 'open the admin page' });
+
+    mockGroqCommand({
+      route: '/tutors',
+      domain: 'tutors',
+      filters: { search: 'maya' },
+      confidence: 0.91,
+      reason: 'Missing action'
+    });
+
+    const missingKeyRes = await request(app)
+      .post('/api/smart-navigation')
+      .send({ intent: 'find maya' });
+
+    mockGroqCommand({
+      action: 'NAVIGATE',
+      route: '/courses',
+      domain: 'courses',
+      filters: { search: 'databases' },
+      confidence: 0.39,
+      reason: 'Weak match'
+    });
+
+    const lowConfidenceRes = await request(app)
+      .post('/api/smart-navigation')
+      .send({ intent: 'maybe something about databases' });
+
+    expect(invalidRes.body.data).toEqual({
+      action: 'NONE',
+      route: null,
+      domain: null,
+      filters: {},
+      confidence: 0,
+      reason: 'Unsupported navigation command'
+    });
+    expect(invalidEnumRes.body.data).toEqual({
+      action: 'NONE',
+      route: null,
+      domain: null,
+      filters: {},
+      confidence: 0,
+      reason: 'Unsupported navigation command'
+    });
+    expect(missingKeyRes.body.data).toEqual({
+      action: 'NONE',
+      route: null,
+      domain: null,
+      filters: {},
+      confidence: 0,
+      reason: 'Unsupported navigation command'
+    });
+    expect(lowConfidenceRes.body.data).toEqual({
+      action: 'NONE',
+      route: null,
+      domain: null,
+      filters: {},
+      confidence: 0.39,
+      reason: 'Low confidence'
+    });
+  }));
+
+  it('should resolve malformed JSON and provider failures to NONE', withGroqConfig(async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        choices: [{ message: { content: 'not json' } }]
+      })
+    });
+
+    const malformedRes = await request(app)
+      .post('/api/smart-navigation')
+      .send({ intent: 'go to tutors' });
+
+    global.fetch = jest.fn().mockRejectedValue(new Error('provider failed'));
+
+    const failedRes = await request(app)
+      .post('/api/smart-navigation')
+      .send({ intent: 'go to courses' });
+
+    expect(malformedRes.body.data).toEqual({
+      action: 'NONE',
+      route: null,
+      domain: null,
+      filters: {},
+      confidence: 0,
+      reason: 'Unable to parse navigation intent'
+    });
+    expect(failedRes.body.data).toEqual({
+      action: 'NONE',
+      route: null,
+      domain: null,
+      filters: {},
+      confidence: 0,
+      reason: 'Unable to parse navigation intent'
+    });
+  }));
+
+  it('should reject inconsistent route/domain pairs even when each value is individually whitelisted', withGroqConfig(async () => {
+    mockGroqCommand({
+      action: 'NAVIGATE',
+      route: '/tutors',
+      domain: 'courses',
+      filters: {},
+      confidence: 0.95,
+      reason: 'Mismatched pair'
+    });
+
+    const mismatchedTutorsRes = await request(app)
+      .post('/api/smart-navigation')
+      .send({ intent: 'show me courses on the tutors page' });
+
+    mockGroqCommand({
+      action: 'NAVIGATE',
+      route: '/courses',
+      domain: 'tutors',
+      filters: {},
+      confidence: 0.95,
+      reason: 'Mismatched pair'
+    });
+
+    const mismatchedCoursesRes = await request(app)
+      .post('/api/smart-navigation')
+      .send({ intent: 'show me tutors on the courses page' });
+
+    expect(mismatchedTutorsRes.body.data).toEqual({
+      action: 'NONE',
+      route: null,
+      domain: null,
+      filters: {},
+      confidence: 0,
+      reason: 'Unsupported navigation command'
+    });
+    expect(mismatchedCoursesRes.body.data).toEqual({
+      action: 'NONE',
+      route: null,
+      domain: null,
+      filters: {},
+      confidence: 0,
+      reason: 'Unsupported navigation command'
+    });
+  }));
+
+  it('should rate limit smart-navigation requests', withGroqConfig(async () => {
+    mockGroqCommand({
+      action: 'NONE',
+      route: null,
+      domain: null,
+      filters: {},
+      confidence: 0.8,
+      reason: 'No matching route'
+    });
+
+    for (let i = 0; i < 10; i += 1) {
+      const res = await request(app)
+        .post('/api/smart-navigation')
+        .set('X-Forwarded-For', '203.0.113.42')
+        .send({ intent: `request ${i}` });
+      expect(res.statusCode).toEqual(200);
+    }
+
+    const limitedRes = await request(app)
+      .post('/api/smart-navigation')
+      .set('X-Forwarded-For', '203.0.113.42')
+      .send({ intent: 'one too many' });
+
+    expect(limitedRes.statusCode).toEqual(429);
+    expect(limitedRes.body).toEqual({ status: 'error', message: 'Too many smart-navigation requests' });
+    expect(global.fetch).toHaveBeenCalledTimes(10);
+  }));
 });
 
 describe('GET /api/tutors', () => {
