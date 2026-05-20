@@ -130,6 +130,23 @@ h1, h2, h3, h4, h5, h6 {
   --bs-btn-disabled-border-color: var(--swinburne-disabled-border);
 }
 
+.btn-directory-action-danger {
+  --bs-btn-font-weight: 700;
+  --bs-btn-color: var(--swinburne-red-berry);
+  --bs-btn-bg: transparent;
+  --bs-btn-border-color: var(--swinburne-red-berry);
+  --bs-btn-hover-color: var(--swinburne-white);
+  --bs-btn-hover-bg: var(--swinburne-red-berry);
+  --bs-btn-hover-border-color: var(--swinburne-red-berry);
+  --bs-btn-focus-shadow-rgb: var(--swinburne-red-berry-rgb);
+  --bs-btn-active-color: var(--swinburne-white);
+  --bs-btn-active-bg: var(--swinburne-red-berry);
+  --bs-btn-active-border-color: var(--swinburne-red-berry);
+  --bs-btn-disabled-color: var(--swinburne-disabled-border);
+  --bs-btn-disabled-bg: transparent;
+  --bs-btn-disabled-border-color: var(--swinburne-disabled-border);
+}
+
 .btn-favorite {
   --bs-btn-font-weight: 700;
   --bs-btn-focus-shadow-rgb: var(--swinburne-punch-rgb);
@@ -209,6 +226,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 [data-bs-theme="dark"] .btn-directory-action-secondary,
+[data-bs-theme="dark"] .btn-directory-action-danger,
 [data-bs-theme="dark"] .btn-favorite-unsaved {
   --bs-btn-color: #FF6B65;
   --bs-btn-border-color: #FF6B65;
