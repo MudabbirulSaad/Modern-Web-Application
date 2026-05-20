@@ -1,7 +1,9 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
 import BaseCard from './common/BaseCard.vue'
 import { getRatingFromArrowKey, reviewStarOptions } from './reviewStars'
+import { useReviewStore } from '../store/reviewStore'
 import { useUserStore } from '../store/userStore'
 
 const props = defineProps({
@@ -16,15 +18,19 @@ const props = defineProps({
 })
 
 const userStore = useUserStore()
-const reviews = ref([])
-const loading = ref(false)
-const error = ref('')
-const submitError = ref('')
-const actionError = ref('')
-const submitting = ref(false)
-const updating = ref(false)
-const deletingId = ref(null)
-const upvotingId = ref(null)
+const reviewStore = useReviewStore()
+const {
+  reviews,
+  loading,
+  error,
+  staleMessage,
+  submitError,
+  actionError,
+  submitting,
+  updating,
+  deletingId,
+  upvotingId
+} = storeToRefs(reviewStore)
 const editingReviewId = ref(null)
 const editRating = ref(5)
 const editComment = ref('')
@@ -58,33 +64,14 @@ const updateEditRatingFromKey = (event) => {
 }
 
 const fetchReviews = async () => {
-  loading.value = true
-  error.value = ''
-
-  try {
-    const params = new URLSearchParams({
-      entity_type: props.entityType,
-      entity_id: String(props.entityId)
-    })
-    const response = await fetch(`/api/reviews?${params.toString()}`, {
-      credentials: 'include'
-    })
-    const payload = await response.json()
-
-    if (!response.ok) {
-      throw new Error(payload.message || 'Unable to load reviews')
-    }
-
-    reviews.value = payload.data || []
-  } catch (err) {
-    error.value = 'Reviews are unavailable right now. Please try again shortly.'
-  } finally {
-    loading.value = false
-  }
+  await reviewStore.loadReviews({
+    entityType: props.entityType,
+    entityId: props.entityId
+  })
 }
 
 const startEditing = (review) => {
-  actionError.value = ''
+  reviewStore.actionError = ''
   editingReviewId.value = review.id
   editRating.value = review.rating
   editComment.value = review.comment
@@ -97,93 +84,36 @@ const cancelEditing = () => {
 }
 
 const submitReview = async () => {
-  submitError.value = ''
-  submitting.value = true
+  const review = await reviewStore.createReview({
+    entityType: props.entityType,
+    entityId: props.entityId,
+    rating: rating.value,
+    comment: comment.value
+  })
 
-  try {
-    const response = await fetch('/api/reviews', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        entity_type: props.entityType,
-        entity_id: Number(props.entityId),
-        rating: Number(rating.value),
-        comment: comment.value
-      })
-    })
-    const payload = await response.json()
-
-    if (!response.ok) {
-      throw new Error(payload.message || 'Unable to submit review')
-    }
-
-    reviews.value = [payload.data, ...reviews.value]
+  if (review) {
     rating.value = 5
     comment.value = ''
-  } catch (err) {
-    submitError.value = err.message || 'Review could not be submitted. Please try again.'
-  } finally {
-    submitting.value = false
   }
 }
 
 const updateReview = async (review) => {
-  actionError.value = ''
-  updating.value = true
+  const updatedReview = await reviewStore.updateReview({
+    id: review.id,
+    rating: editRating.value,
+    comment: editComment.value
+  })
 
-  try {
-    const response = await fetch(`/api/reviews/${review.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        rating: Number(editRating.value),
-        comment: editComment.value
-      })
-    })
-    const payload = await response.json()
-
-    if (!response.ok) {
-      throw new Error(payload.message || 'Unable to update review')
-    }
-
+  if (updatedReview) {
     cancelEditing()
-    await fetchReviews()
-  } catch (err) {
-    actionError.value = err.message || 'Review could not be updated. Please try again.'
-  } finally {
-    updating.value = false
   }
 }
 
 const deleteReview = async (review) => {
-  actionError.value = ''
-  deletingId.value = review.id
+  const deleted = await reviewStore.deleteReview(review)
 
-  try {
-    const response = await fetch(`/api/reviews/${review.id}`, {
-      method: 'DELETE',
-      credentials: 'include'
-    })
-    const payload = await response.json()
-
-    if (!response.ok) {
-      throw new Error(payload.message || 'Unable to delete review')
-    }
-
-    if (editingReviewId.value === review.id) {
-      cancelEditing()
-    }
-    await fetchReviews()
-  } catch (err) {
-    actionError.value = err.message || 'Review could not be deleted. Please try again.'
-  } finally {
-    deletingId.value = null
+  if (deleted && editingReviewId.value === review.id) {
+    cancelEditing()
   }
 }
 
@@ -192,32 +122,11 @@ const toggleUpvote = async (review) => {
     return
   }
 
-  actionError.value = ''
-  upvotingId.value = review.id
-
-  try {
-    const response = await fetch(`/api/reviews/${review.id}/upvote`, {
-      method: 'POST',
-      credentials: 'include'
-    })
-    const payload = await response.json()
-
-    if (!response.ok) {
-      throw new Error(payload.message || 'Unable to update upvote')
-    }
-
-    reviews.value = reviews.value.map((currentReview) => (
-      currentReview.id === review.id ? payload.data : currentReview
-    ))
-  } catch (err) {
-    actionError.value = err.message || 'Upvote could not be updated. Please try again.'
-  } finally {
-    upvotingId.value = null
-  }
+  await reviewStore.toggleUpvote(review)
 }
 
 watch(
-  () => [props.entityType, props.entityId, userStore.isStudent],
+  () => [props.entityType, props.entityId, userStore.isStudent, userStore.userId],
   fetchReviews,
   { immediate: true }
 )
@@ -306,6 +215,10 @@ watch(
     </div>
 
     <div v-else class="vstack gap-3">
+      <div v-if="staleMessage" class="alert alert-warning mb-0" role="status">
+        {{ staleMessage }}
+      </div>
+
       <div v-if="actionError" class="alert alert-danger mb-0" role="alert">
         {{ actionError }}
       </div>

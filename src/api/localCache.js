@@ -175,6 +175,35 @@ const normalizeEntityNamespace = (namespace) => {
   return normalizedNamespace
 }
 
+const normalizeReviewEntityType = (entityType) => {
+  const normalizedEntityType = String(entityType || '').trim().toLowerCase()
+
+  if (!['course', 'tutor'].includes(normalizedEntityType)) {
+    throw new Error(`Unsupported review target entity type: ${entityType}`)
+  }
+
+  return normalizedEntityType
+}
+
+const normalizeReviewEntityId = (entityId) => {
+  const normalizedEntityId = normalizePositiveInteger(entityId, 0)
+
+  if (!normalizedEntityId) {
+    throw new Error('Review target entity id is required')
+  }
+
+  return normalizedEntityId
+}
+
+const omitStudentReviewMarkersForGuest = (viewerScope, row) => {
+  if (viewerScope !== GUEST_VIEWER_SCOPE || !row || !Object.prototype.hasOwnProperty.call(row, 'has_upvoted')) {
+    return row
+  }
+
+  const { has_upvoted, ...guestVisibleRow } = row
+  return guestVisibleRow
+}
+
 const shouldExpireGuestRecord = (record) => (
   record?.viewerScope === GUEST_VIEWER_SCOPE &&
   typeof record.savedAt === 'number' &&
@@ -221,6 +250,23 @@ export const canonicalizeDirectoryQueryKey = ({
     `sort=${normalizedSort}`,
     `page=${normalizedPage}`,
     `limit=${normalizedLimit}`
+  ].join('|')
+}
+
+export const canonicalizeReviewCollectionKey = ({
+  viewerScope = GUEST_VIEWER_SCOPE,
+  entityType,
+  entityId
+} = {}) => {
+  const normalizedViewerScope = normalizeViewerScope(viewerScope)
+  const normalizedEntityType = normalizeReviewEntityType(entityType)
+  const normalizedEntityId = normalizeReviewEntityId(entityId)
+
+  return [
+    normalizedViewerScope,
+    'reviews',
+    `entity_type=${normalizedEntityType}`,
+    `entity_id=${normalizedEntityId}`
   ].join('|')
 }
 
@@ -313,6 +359,68 @@ export const saveEntities = async ({
   rows = []
 }) => Promise.all(rows.map((row) => saveEntity({ viewerScope, namespace, row })))
 
+export const saveReviewEntities = async ({
+  viewerScope = GUEST_VIEWER_SCOPE,
+  rows = []
+}) => {
+  const normalizedViewerScope = normalizeViewerScope(viewerScope)
+
+  return saveEntities({
+    viewerScope: normalizedViewerScope,
+    namespace: 'reviews',
+    rows: rows.map((row) => omitStudentReviewMarkersForGuest(normalizedViewerScope, row))
+  })
+}
+
+export const saveReviewCollection = async ({
+  viewerScope = GUEST_VIEWER_SCOPE,
+  entityType,
+  entityId,
+  reviewIds = []
+}) => {
+  const normalizedViewerScope = normalizeViewerScope(viewerScope)
+  const key = canonicalizeReviewCollectionKey({
+    viewerScope: normalizedViewerScope,
+    entityType,
+    entityId
+  })
+  const record = {
+    cacheKey: createCompositeKey(normalizedViewerScope, key),
+    viewerScope: normalizedViewerScope,
+    key,
+    savedAt: nowProvider(),
+    data: {
+      entityType: normalizeReviewEntityType(entityType),
+      entityId: normalizeReviewEntityId(entityId),
+      reviewIds: [...reviewIds]
+    }
+  }
+
+  return putRecord('reviewQueries', record)
+}
+
+export const saveReviewCollectionWithEntities = async ({
+  viewerScope = GUEST_VIEWER_SCOPE,
+  entityType,
+  entityId,
+  rows = []
+}) => {
+  const normalizedViewerScope = normalizeViewerScope(viewerScope)
+
+  await Promise.all([
+    saveReviewCollection({
+      viewerScope: normalizedViewerScope,
+      entityType,
+      entityId,
+      reviewIds: rows.map((row) => row.id)
+    }),
+    saveReviewEntities({
+      viewerScope: normalizedViewerScope,
+      rows
+    })
+  ])
+}
+
 export const getEntity = async ({
   viewerScope = GUEST_VIEWER_SCOPE,
   namespace,
@@ -326,6 +434,25 @@ export const getEntity = async ({
   )
 
   return withoutExpiredGuestRecord(normalizedNamespace, record)
+}
+
+export const getReviewCollection = async ({
+  viewerScope = GUEST_VIEWER_SCOPE,
+  entityType,
+  entityId
+}) => {
+  const normalizedViewerScope = normalizeViewerScope(viewerScope)
+  const key = canonicalizeReviewCollectionKey({
+    viewerScope: normalizedViewerScope,
+    entityType,
+    entityId
+  })
+  const record = await getRecord(
+    'reviewQueries',
+    createCompositeKey(normalizedViewerScope, key)
+  )
+
+  return withoutExpiredGuestRecord('reviewQueries', record)
 }
 
 export const savePendingLocalAction = async ({
