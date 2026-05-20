@@ -15,6 +15,7 @@ dist-ssr
 docs/
 issues/
 jit/
+.antigravitycli/
 
 .env
 CONTEXT.md
