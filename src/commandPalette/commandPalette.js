@@ -30,6 +30,7 @@ const MINIMUM_COMMAND_CONFIDENCE = 0.5
 const OFFLINE_UNSUPPORTED_MESSAGE = 'Offline command not supported. Try Courses, Tutors, or a simple search.'
 const RATE_LIMIT_MESSAGE = 'Too many smart-navigation requests. Please wait and try again.'
 const NAVIGATE_PREFIX = '/navigate'
+const ASK_PREFIX = '/ask'
 
 const cleanText = (value, maxLength = 100) => String(value || '').trim().slice(0, maxLength)
 const normalizeSearchText = (value) => cleanText(value, 500).toLowerCase()
@@ -446,6 +447,8 @@ const parseDomain = (value) => {
 const OFFLINE_DOMAIN_PATTERN = '(courses?|tutors?|teachers?|lecturers?|professors?|instructors?)'
 
 const startsWithNavigateCommand = (intent) => cleanText(intent, 500).toLowerCase().startsWith(NAVIGATE_PREFIX)
+const startsWithAskCommand = (intent) => cleanText(intent, 500).toLowerCase().startsWith(ASK_PREFIX)
+const cleanAskQuestion = (intent) => cleanText(cleanText(intent, 500).replace(/^\/ask\b/i, ''), 500)
 
 const cleanNavigateDiscoveryText = (value, domain) => {
   let text = cleanText(value, 100)
@@ -660,6 +663,14 @@ export const requestSmartNavigationCommand = (intent, apiRequest) => apiRequest(
   body: JSON.stringify({ intent })
 })
 
+export const requestGroundedPaletteAnswer = (question, apiRequest) => apiRequest('/api/smart-navigation/ask', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({ question })
+})
+
 export const submitCommandPaletteIntent = async ({
   intent,
   apiRequest,
@@ -676,6 +687,25 @@ export const submitCommandPaletteIntent = async ({
   }
 
   try {
+    if (online && startsWithAskCommand(cleanIntent)) {
+      const question = cleanAskQuestion(cleanIntent)
+
+      if (!question) {
+        return {
+          executed: false,
+          feedback: 'Ask a question after /ask.'
+        }
+      }
+
+      const askAnswer = await requestGroundedPaletteAnswer(question, apiRequest)
+
+      return {
+        executed: false,
+        feedback: '',
+        askAnswer
+      }
+    }
+
     if (online && startsWithNavigateCommand(cleanIntent)) {
       const deterministicResult = await executeDeterministicNavigateCommand({
         intent: cleanIntent,
@@ -731,7 +761,8 @@ export const createCommandPaletteController = ({
     open: false,
     intent: '',
     feedback: '',
-    submitting: false
+    submitting: false,
+    askAnswer: null
   }
 
   return {
@@ -744,16 +775,21 @@ export const createCommandPaletteController = ({
       state.intent = ''
       state.feedback = ''
       state.submitting = false
+      state.askAnswer = null
     },
     updateIntent(intent) {
       state.intent = intent
       state.feedback = ''
+      state.askAnswer = null
     },
     isOpen() {
       return state.open
     },
     feedback() {
       return state.feedback
+    },
+    askAnswer() {
+      return state.askAnswer
     },
     searchResults() {
       return createGlobalPaletteSearch({
@@ -786,6 +822,7 @@ export const createCommandPaletteController = ({
         return
       }
 
+      state.askAnswer = result.askAnswer || null
       state.feedback = result.feedback
     }
   }

@@ -637,4 +637,123 @@ describe('command palette behavior', () => {
       feedback: 'Navigation was blocked. You may not have access to that page.'
     })
   })
+
+  it('submits /ask to the grounded answer endpoint and keeps the palette open with cited cards', async () => {
+    const apiRequest = jest.fn(async (url, options) => {
+      if (url === '/api/smart-navigation/ask') {
+        expect(options).toMatchObject({
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        })
+        expect(JSON.parse(options.body)).toEqual({
+          question: 'Which database course should I take?'
+        })
+
+        return {
+          type: 'ANSWER',
+          answer: 'COS20031 Database Design is the relevant database course.',
+          confidence: 0.84,
+          citations: {
+            courses: [{
+              id: 9,
+              kind: 'course',
+              title: 'COS20031 Database Design',
+              department: 'Information Systems'
+            }],
+            tutors: [{
+              id: 3,
+              kind: 'tutor',
+              name: 'Liam Patel',
+              department: 'Information Systems'
+            }]
+          },
+          closestMatches: {
+            courses: [],
+            tutors: []
+          }
+        }
+      }
+
+      throw new Error('Unexpected request: ' + url)
+    })
+    const router = { push: jest.fn(async () => {}) }
+    const controller = createCommandPaletteController({
+      apiRequest,
+      router,
+      isOnline: () => true
+    })
+
+    controller.open()
+    controller.updateIntent('/ask Which database course should I take?')
+    await controller.submit()
+
+    expect(controller.isOpen()).toBe(true)
+    expect(controller.feedback()).toBe('')
+    expect(controller.askAnswer()).toMatchObject({
+      type: 'ANSWER',
+      answer: 'COS20031 Database Design is the relevant database course.',
+      citations: {
+        courses: [expect.objectContaining({ id: 9, kind: 'course' })],
+        tutors: [expect.objectContaining({ id: 3, kind: 'tutor' })]
+      }
+    })
+    expect(router.push).not.toHaveBeenCalled()
+    expect(apiRequest.mock.calls.map(([url]) => url)).not.toContain('/api/smart-navigation')
+  })
+
+  it('shows closest matches for weak /ask evidence without closing the palette', async () => {
+    const apiRequest = jest.fn(async () => ({
+      type: 'CLOSEST_MATCHES',
+      answer: '',
+      confidence: 0.22,
+      feedback: 'I found related directory matches, but not enough evidence to answer.',
+      citations: {
+        courses: [],
+        tutors: []
+      },
+      closestMatches: {
+        courses: [{ id: 4, kind: 'course', title: 'COS10001 Intro to Programming' }],
+        tutors: []
+      }
+    }))
+    const router = { push: jest.fn(async () => {}) }
+    const result = await submitCommandPaletteIntent({
+      intent: '/ask Should I choose a web or networks unit?',
+      apiRequest,
+      router,
+      online: true
+    })
+
+    expect(result).toMatchObject({
+      executed: false,
+      feedback: '',
+      askAnswer: {
+        type: 'CLOSEST_MATCHES',
+        closestMatches: {
+          courses: [expect.objectContaining({ id: 4, kind: 'course' })]
+        }
+      }
+    })
+    expect(router.push).not.toHaveBeenCalled()
+  })
+
+  it('degrades /ask provider failures to controlled palette feedback', async () => {
+    const apiRequest = jest.fn(async () => {
+      throw new ApiError('Grounded answers are unavailable', { status: 503 })
+    })
+    const router = { push: jest.fn(async () => {}) }
+
+    await expect(submitCommandPaletteIntent({
+      intent: '/ask Which tutor teaches security?',
+      apiRequest,
+      router,
+      online: true
+    })).resolves.toEqual({
+      executed: false,
+      feedback: 'Grounded answers are unavailable'
+    })
+    expect(router.push).not.toHaveBeenCalled()
+  })
 })

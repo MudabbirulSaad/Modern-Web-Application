@@ -48,6 +48,21 @@ const mockGroqCommand = (command) => {
   });
 };
 
+const mockGroqAskAnswer = (answer) => {
+  global.fetch = jest.fn().mockResolvedValue({
+    ok: true,
+    json: jest.fn().mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify(answer)
+          }
+        }
+      ]
+    })
+  });
+};
+
 const smartNavStudentCookie = () => {
   const token = jwt.sign({ id: 7, role: 'student' }, process.env.JWT_SECRET || 'development-jwt-secret');
   return [`auth_token=${token}`];
@@ -388,6 +403,222 @@ describe('POST /api/smart-navigation', () => {
     expect(limitedRes.body).toEqual({ status: 'error', message: 'Too many smart-navigation requests' });
     expect(global.fetch).toHaveBeenCalledTimes(10);
   }));
+});
+
+describe('POST /api/smart-navigation/ask', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+    delete global.fetch;
+  });
+
+  it('retrieves limited public directory rows before asking Groq and returns cited cards', withGroqConfig(async () => {
+    const mockCourses = [
+      {
+        id: 9,
+        title: 'COS20031 Database Design',
+        department: 'Information Systems',
+        description: 'Model and query relational data.',
+        tutor_names: 'Liam Patel',
+        has_favorite: 1,
+        private_note: 'do not send'
+      }
+    ];
+    const mockTutors = [
+      {
+        id: 3,
+        name: 'Liam Patel',
+        department: 'Information Systems',
+        bio: 'Teaches database systems.',
+        has_favorite: 1,
+        user_id: 99
+      }
+    ];
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce(mockCourses)
+        .mockResolvedValueOnce(mockTutors),
+      release: jest.fn()
+    };
+    jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+    mockGroqAskAnswer({
+      answer: 'COS20031 Database Design is the clearest database match.',
+      citations: {
+        courses: [9],
+        tutors: [3]
+      },
+      confidence: 0.82
+    });
+
+    const res = await request(app)
+      .post('/api/smart-navigation/ask')
+      .set('Cookie', smartNavStudentCookie())
+      .send({
+        question: 'Which database course should I take?',
+        pendingLocalActions: [{ type: 'favorite', id: 9 }],
+        jwt: 'secret'
+      });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.data).toMatchObject({
+      type: 'ANSWER',
+      answer: 'COS20031 Database Design is the clearest database match.',
+      confidence: 0.82,
+      citations: {
+        courses: [expect.objectContaining({ id: 9, kind: 'course', title: 'COS20031 Database Design' })],
+        tutors: [expect.objectContaining({ id: 3, kind: 'tutor', name: 'Liam Patel' })]
+      }
+    });
+    expect(mockConn.query).toHaveBeenCalledTimes(2);
+    expect(mockConn.query.mock.calls[0][0]).toContain('LIMIT ?');
+    expect(mockConn.query.mock.calls[0][1]).toEqual(expect.arrayContaining([3]));
+    expect(mockConn.query.mock.calls[1][0]).toContain('LIMIT ?');
+    expect(mockConn.query.mock.calls[1][1]).toEqual(expect.arrayContaining([3]));
+
+    const requestBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    const userMessage = JSON.parse(requestBody.messages[1].content);
+    expect(userMessage).toEqual({
+      question: 'Which database course should I take?',
+      directoryRows: {
+        courses: [{
+          id: 9,
+          title: 'COS20031 Database Design',
+          department: 'Information Systems',
+          description: 'Model and query relational data.',
+          tutor_names: 'Liam Patel'
+        }],
+        tutors: [{
+          id: 3,
+          name: 'Liam Patel',
+          department: 'Information Systems',
+          bio: 'Teaches database systems.'
+        }]
+      }
+    });
+    expect(JSON.stringify(requestBody)).not.toContain('auth_token');
+    expect(JSON.stringify(requestBody)).not.toContain('secret');
+    expect(JSON.stringify(requestBody)).not.toContain('pendingLocalActions');
+    expect(JSON.stringify(requestBody)).not.toContain('has_favorite');
+    expect(JSON.stringify(requestBody)).not.toContain('user_id');
+    expect(JSON.stringify(requestBody)).not.toContain('private_note');
+  }));
+
+  it('returns closest matches instead of advice when evidence is weak', withGroqConfig(async () => {
+    const mockCourses = [{
+      id: 12,
+      title: 'COS10001 Introduction to Programming',
+      department: 'Computer Science',
+      description: 'Programming fundamentals.',
+      tutor_names: ''
+    }];
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce(mockCourses)
+        .mockResolvedValueOnce([]),
+      release: jest.fn()
+    };
+    jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+    mockGroqAskAnswer({
+      answer: 'You should pick whichever unit feels best.',
+      citations: {
+        courses: [],
+        tutors: []
+      },
+      confidence: 0.2
+    });
+
+    const res = await request(app)
+      .post('/api/smart-navigation/ask')
+      .send({ question: 'Should I choose web apps or networks?' });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.data).toMatchObject({
+      type: 'CLOSEST_MATCHES',
+      answer: '',
+      feedback: 'I found related directory matches, but not enough evidence to answer.',
+      closestMatches: {
+        courses: [expect.objectContaining({ id: 12, kind: 'course' })],
+        tutors: []
+      },
+      citations: {
+        courses: [],
+        tutors: []
+      }
+    });
+  }));
+
+  it('returns controlled feedback for missing credentials, provider failures, and malformed output', async () => {
+    const originalApiKey = process.env.GROQ_API_KEY;
+    const originalModel = process.env.GROQ_MODEL;
+    delete process.env.GROQ_API_KEY;
+    delete process.env.GROQ_MODEL;
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ id: 1, title: 'COS10001 Programming', department: 'Computer Science', description: '', tutor_names: '' }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: 1, title: 'COS10001 Programming', department: 'Computer Science', description: '', tutor_names: '' }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: 1, title: 'COS10001 Programming', department: 'Computer Science', description: '', tutor_names: '' }])
+        .mockResolvedValueOnce([]),
+      release: jest.fn()
+    };
+    jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+    global.fetch = jest.fn();
+
+    const missingConfigRes = await request(app)
+      .post('/api/smart-navigation/ask')
+      .send({ question: 'Which course covers programming?' });
+
+    process.env.GROQ_API_KEY = 'test-groq-key';
+    process.env.GROQ_MODEL = 'llama-test';
+    global.fetch = jest.fn().mockRejectedValue(new Error('provider failed'));
+
+    const failedProviderRes = await request(app)
+      .post('/api/smart-navigation/ask')
+      .send({ question: 'Which course covers programming?' });
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        choices: [{ message: { content: 'not json' } }]
+      })
+    });
+
+    const malformedRes = await request(app)
+      .post('/api/smart-navigation/ask')
+      .send({ question: 'Which course covers programming?' });
+
+    expect(missingConfigRes.body.data).toEqual({
+      type: 'FEEDBACK',
+      answer: '',
+      confidence: 0,
+      feedback: 'Grounded answers are unavailable.',
+      citations: { courses: [], tutors: [] },
+      closestMatches: {
+        courses: [expect.objectContaining({ id: 1, kind: 'course' })],
+        tutors: []
+      }
+    });
+    expect(failedProviderRes.body.data).toMatchObject({
+      type: 'FEEDBACK',
+      feedback: 'Grounded answers are unavailable.'
+    });
+    expect(malformedRes.body.data).toMatchObject({
+      type: 'FEEDBACK',
+      feedback: 'Grounded answers are unavailable.'
+    });
+
+    if (originalApiKey === undefined) {
+      delete process.env.GROQ_API_KEY;
+    } else {
+      process.env.GROQ_API_KEY = originalApiKey;
+    }
+
+    if (originalModel === undefined) {
+      delete process.env.GROQ_MODEL;
+    } else {
+      process.env.GROQ_MODEL = originalModel;
+    }
+  });
 });
 
 describe('GET /api/tutors', () => {

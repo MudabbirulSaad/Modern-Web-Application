@@ -179,6 +179,8 @@ const SMART_NAV_MAX_INTENT_LENGTH = 500;
 const SMART_NAV_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const SMART_NAV_RATE_LIMIT_MAX = 10;
 const SMART_NAV_MIN_CONFIDENCE = 0.5;
+const SMART_ASK_CONTEXT_LIMIT = 3;
+const SMART_ASK_MIN_CONFIDENCE = 0.55;
 const SMART_NAV_ALLOWED_ACTIONS = new Set(['NAVIGATE', 'FILTER', 'SEARCH', 'NONE']);
 const SMART_NAV_ROUTE_DOMAIN_MAP = new Map([
   ['/', null],
@@ -332,6 +334,20 @@ const parseGroqSmartNavigationContent = (content) => {
   return JSON.parse(fencedJson ? fencedJson[1] : rawContent);
 };
 
+const readSmartAskQuestion = (body) => {
+  if (!body || typeof body.question !== 'string' || body.question.trim().length === 0) {
+    return { error: 'Question is required' };
+  }
+
+  const question = body.question.trim();
+
+  if (question.length > SMART_NAV_MAX_INTENT_LENGTH) {
+    return { error: `Question must be ${SMART_NAV_MAX_INTENT_LENGTH} characters or fewer` };
+  }
+
+  return { question };
+};
+
 const requestSmartNavigationCommand = async (intent) => {
   const apiKey = process.env.GROQ_API_KEY;
   const model = process.env.GROQ_MODEL;
@@ -373,6 +389,140 @@ const requestSmartNavigationCommand = async (intent) => {
   const payload = await response.json();
   const content = payload?.choices?.[0]?.message?.content;
   return sanitizeSmartNavigationCommand(parseGroqSmartNavigationContent(content));
+};
+
+const mapAskCourseRow = (course) => ({
+  id: Number(course.id),
+  kind: 'course',
+  title: String(course.title || '').trim().slice(0, 160),
+  department: String(course.department || '').trim().slice(0, 160),
+  description: String(course.description || '').trim().slice(0, 260),
+  tutor_names: String(course.tutor_names || '').trim().slice(0, 160)
+});
+
+const mapAskTutorRow = (tutor) => ({
+  id: Number(tutor.id),
+  kind: 'tutor',
+  name: String(tutor.name || '').trim().slice(0, 160),
+  department: String(tutor.department || '').trim().slice(0, 160),
+  bio: String(tutor.bio || '').trim().slice(0, 260)
+});
+
+const createEmptyAskCollections = () => ({
+  courses: [],
+  tutors: []
+});
+
+const createAskFeedback = (feedback, closestMatches = createEmptyAskCollections()) => ({
+  type: 'FEEDBACK',
+  answer: '',
+  confidence: 0,
+  feedback,
+  citations: createEmptyAskCollections(),
+  closestMatches
+});
+
+const createAskClosestMatches = (closestMatches, confidence = 0) => ({
+  type: 'CLOSEST_MATCHES',
+  answer: '',
+  confidence,
+  feedback: 'I found related directory matches, but not enough evidence to answer.',
+  citations: createEmptyAskCollections(),
+  closestMatches
+});
+
+const parseAskCitationIds = (value) => {
+  const rawIds = Array.isArray(value)
+    ? value
+    : Array.isArray(value?.ids)
+      ? value.ids
+      : [];
+
+  return [...new Set(rawIds
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0))];
+};
+
+const buildAskCitations = (answer, context) => {
+  const courseIds = parseAskCitationIds(answer?.citations?.courses);
+  const tutorIds = parseAskCitationIds(answer?.citations?.tutors);
+  const courseById = new Map(context.courses.map((course) => [course.id, course]));
+  const tutorById = new Map(context.tutors.map((tutor) => [tutor.id, tutor]));
+
+  return {
+    courses: courseIds.map((id) => courseById.get(id)).filter(Boolean),
+    tutors: tutorIds.map((id) => tutorById.get(id)).filter(Boolean)
+  };
+};
+
+const sanitizeSmartAskAnswer = (answer, context) => {
+  if (!answer || typeof answer !== 'object' || Array.isArray(answer)) {
+    return createAskFeedback('Grounded answers are unavailable.', context);
+  }
+
+  const confidence = Math.max(0, Math.min(Number(answer.confidence) || 0, 1));
+  const citations = buildAskCitations(answer, context);
+  const hasCitations = citations.courses.length > 0 || citations.tutors.length > 0;
+  const text = String(answer.answer || '').trim().slice(0, 900);
+
+  if (confidence < SMART_ASK_MIN_CONFIDENCE || !text || !hasCitations || answer.supported === false) {
+    return createAskClosestMatches(context, confidence);
+  }
+
+  return {
+    type: 'ANSWER',
+    answer: text,
+    confidence,
+    feedback: '',
+    citations,
+    closestMatches: createEmptyAskCollections()
+  };
+};
+
+const requestSmartAskAnswer = async (question, context) => {
+  const apiKey = process.env.GROQ_API_KEY;
+  const model = process.env.GROQ_MODEL;
+
+  if (!apiKey || !model) {
+    return createAskFeedback('Grounded answers are unavailable.', context);
+  }
+
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content: 'Answer only from the provided public course and tutor directory rows. Return JSON only with answer, confidence, and citations containing course and tutor id arrays. If the rows do not support an answer or recommendation, use low confidence and empty citations.'
+        },
+        {
+          role: 'user',
+          content: JSON.stringify({
+            question,
+            directoryRows: {
+              courses: context.courses.map(({ kind, ...course }) => course),
+              tutors: context.tutors.map(({ kind, ...tutor }) => tutor)
+            }
+          })
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    return createAskFeedback('Grounded answers are unavailable.', context);
+  }
+
+  const payload = await response.json();
+  const content = payload?.choices?.[0]?.message?.content;
+  return sanitizeSmartAskAnswer(parseGroqSmartNavigationContent(content), context);
 };
 
 const readDirectorySort = (query) => {
@@ -684,6 +834,77 @@ const buildCourseFilters = ({ search, department }) => {
     whereClause: clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '',
     params,
     searchSpec
+  };
+};
+
+const selectSmartAskContext = async (conn, question) => {
+  const searchSpec = createDirectorySearchSpec(question);
+  const courseFilters = buildCourseFilters({ search: question, department: '' });
+  const tutorFilters = buildTutorFilters({ search: question, department: '' });
+  const courseSearchRanking = buildSearchRanking({
+    searchSpec,
+    primaryField: 'c.title',
+    codeField: 'SUBSTRING_INDEX(c.title, " ", 1)',
+    prefixFields: ['c.department'],
+    allKeywordFields: ['c.title', 'c.department', 'c.description', "COALESCE(course_tutor_search.tutor_names_search, '')"],
+    fieldPriorityGroups: [
+      ['c.title'],
+      ['c.department'],
+      ['c.description'],
+      ["COALESCE(course_tutor_search.tutor_names_search, '')"]
+    ],
+    stableFields: ['c.title ASC', 'c.id ASC']
+  });
+  const tutorSearchRanking = buildSearchRanking({
+    searchSpec,
+    primaryField: 't.name',
+    prefixFields: ['t.department'],
+    allKeywordFields: ['t.name', 't.department', 't.bio'],
+    fieldPriorityGroups: [
+      ['t.name'],
+      ['t.department'],
+      ['t.bio']
+    ],
+    stableFields: ['t.name ASC', 't.id ASC']
+  });
+
+  const courseRows = await conn.query(
+    `
+      SELECT
+        c.id,
+        c.title,
+        c.department,
+        c.description,
+        COALESCE(GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ', '), '') AS tutor_names
+      FROM Courses c
+      LEFT JOIN Course_Tutors ct ON ct.course_id = c.id
+      LEFT JOIN Tutors t ON t.id = ct.tutor_id
+      ${buildCourseTutorSearchJoin()}
+      ${courseFilters.whereClause}
+      GROUP BY c.id, c.title, c.department, c.description
+      ORDER BY ${courseSearchRanking.clause || 'c.title ASC, c.id ASC'}
+      LIMIT ?
+    `,
+    [...courseFilters.params, ...(courseSearchRanking.params || []), SMART_ASK_CONTEXT_LIMIT]
+  );
+  const tutorRows = await conn.query(
+    `
+      SELECT
+        t.id,
+        t.name,
+        t.department,
+        t.bio
+      FROM Tutors t
+      ${tutorFilters.whereClause}
+      ORDER BY ${tutorSearchRanking.clause || 't.name ASC, t.id ASC'}
+      LIMIT ?
+    `,
+    [...tutorFilters.params, ...(tutorSearchRanking.params || []), SMART_ASK_CONTEXT_LIMIT]
+  );
+
+  return {
+    courses: courseRows.map(mapAskCourseRow),
+    tutors: tutorRows.map(mapAskTutorRow)
   };
 };
 
@@ -1000,6 +1221,39 @@ app.post('/api/smart-navigation', async (req, res) => {
       status: 'ok',
       data: noneSmartNavigationCommand('Unable to parse navigation intent')
     });
+  }
+});
+
+app.post('/api/smart-navigation/ask', async (req, res) => {
+  const { question, error } = readSmartAskQuestion(req.body);
+
+  if (error) {
+    res.status(400).json({ status: 'error', message: error });
+    return;
+  }
+
+  let conn;
+  try {
+    conn = await pool.getConnection();
+    const context = await selectSmartAskContext(conn, question);
+
+    if (context.courses.length === 0 && context.tutors.length === 0) {
+      res.json({
+        status: 'ok',
+        data: createAskClosestMatches(context)
+      });
+      return;
+    }
+
+    const answer = await requestSmartAskAnswer(question, context);
+    res.json({ status: 'ok', data: answer });
+  } catch (err) {
+    res.json({
+      status: 'ok',
+      data: createAskFeedback('Grounded answers are unavailable.', createEmptyAskCollections())
+    });
+  } finally {
+    if (conn) conn.release();
   }
 });
 

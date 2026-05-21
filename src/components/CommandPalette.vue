@@ -29,6 +29,7 @@ const submitting = ref(false)
 const searchResults = ref(createEmptySearchResults())
 const searchLoading = ref(false)
 const searchError = ref('')
+const askAnswer = ref(null)
 let searchTimeout = null
 let searchRequestId = 0
 
@@ -51,6 +52,7 @@ const closePalette = () => {
   isOpen.value = false
   intent.value = ''
   feedback.value = ''
+  askAnswer.value = null
   submitting.value = false
   resetSearch()
 }
@@ -58,6 +60,7 @@ const closePalette = () => {
 const updateIntent = (event) => {
   intent.value = event.target.value
   feedback.value = ''
+  askAnswer.value = null
 }
 
 const loadSearchResults = async (query, requestId) => {
@@ -143,6 +146,7 @@ const submit = async () => {
     return
   }
 
+  askAnswer.value = result.askAnswer || null
   feedback.value = result.feedback
 }
 
@@ -217,7 +221,97 @@ onUnmounted(() => {
           </p>
 
           <div
-            v-if="searchResults.hasQuery"
+            v-if="askAnswer"
+            class="command-palette-answer mt-3"
+            aria-live="polite"
+          >
+            <p
+              v-if="askAnswer.feedback"
+              class="alert alert-warning mb-3"
+              role="status"
+            >
+              {{ askAnswer.feedback }}
+            </p>
+
+            <section
+              v-if="askAnswer.type === 'ANSWER'"
+              aria-labelledby="command-palette-answer-heading"
+            >
+              <h3 id="command-palette-answer-heading" class="command-palette-group-heading mb-2">
+                Answer
+              </h3>
+              <p class="command-palette-answer-copy mb-3">{{ askAnswer.answer }}</p>
+            </section>
+
+            <section
+              v-if="askAnswer.citations?.courses?.length || askAnswer.citations?.tutors?.length"
+              aria-labelledby="command-palette-citations-heading"
+            >
+              <h3 id="command-palette-citations-heading" class="command-palette-group-heading mb-2">
+                Cited Results
+              </h3>
+              <div class="list-group">
+                <button
+                  v-for="course in askAnswer.citations.courses"
+                  :key="`ask-course-${course.id}`"
+                  class="list-group-item list-group-item-action command-palette-result"
+                  type="button"
+                  @click="navigateToResult(course)"
+                >
+                  <span class="command-palette-result-title">{{ course.title }}</span>
+                  <span class="small text-body-secondary">{{ course.department }}</span>
+                  <span v-if="course.description" class="command-palette-result-copy">{{ course.description }}</span>
+                </button>
+                <button
+                  v-for="tutor in askAnswer.citations.tutors"
+                  :key="`ask-tutor-${tutor.id}`"
+                  class="list-group-item list-group-item-action command-palette-result"
+                  type="button"
+                  @click="navigateToResult(tutor)"
+                >
+                  <span class="command-palette-result-title">{{ tutor.name }}</span>
+                  <span class="small text-body-secondary">{{ tutor.department }}</span>
+                  <span v-if="tutor.bio" class="command-palette-result-copy">{{ tutor.bio }}</span>
+                </button>
+              </div>
+            </section>
+
+            <section
+              v-else-if="askAnswer.closestMatches?.courses?.length || askAnswer.closestMatches?.tutors?.length"
+              aria-labelledby="command-palette-closest-heading"
+            >
+              <h3 id="command-palette-closest-heading" class="command-palette-group-heading mb-2">
+                Closest Matches
+              </h3>
+              <div class="list-group">
+                <button
+                  v-for="course in askAnswer.closestMatches.courses"
+                  :key="`closest-course-${course.id}`"
+                  class="list-group-item list-group-item-action command-palette-result"
+                  type="button"
+                  @click="navigateToResult(course)"
+                >
+                  <span class="command-palette-result-title">{{ course.title }}</span>
+                  <span class="small text-body-secondary">{{ course.department }}</span>
+                  <span v-if="course.description" class="command-palette-result-copy">{{ course.description }}</span>
+                </button>
+                <button
+                  v-for="tutor in askAnswer.closestMatches.tutors"
+                  :key="`closest-tutor-${tutor.id}`"
+                  class="list-group-item list-group-item-action command-palette-result"
+                  type="button"
+                  @click="navigateToResult(tutor)"
+                >
+                  <span class="command-palette-result-title">{{ tutor.name }}</span>
+                  <span class="small text-body-secondary">{{ tutor.department }}</span>
+                  <span v-if="tutor.bio" class="command-palette-result-copy">{{ tutor.bio }}</span>
+                </button>
+              </div>
+            </section>
+          </div>
+
+          <div
+            v-if="searchResults.hasQuery && !askAnswer"
             class="command-palette-results mt-3"
             aria-live="polite"
           >
@@ -382,6 +476,15 @@ onUnmounted(() => {
 .command-palette-results {
   max-height: min(26rem, 52vh);
   overflow-y: auto;
+}
+
+.command-palette-answer {
+  max-height: min(28rem, 54vh);
+  overflow-y: auto;
+}
+
+.command-palette-answer-copy {
+  color: var(--bs-body-color);
 }
 
 .command-palette-group-heading {
