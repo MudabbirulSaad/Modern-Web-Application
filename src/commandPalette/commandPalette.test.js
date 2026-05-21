@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals'
 import { createPinia, setActivePinia } from 'pinia'
+import { createMemoryHistory, createRouter } from 'vue-router'
 import {
   createCommandPaletteController,
   createCommandPaletteShortcutHandler,
@@ -464,6 +465,176 @@ describe('command palette behavior', () => {
       hasMatches: true,
       courses: [expect.objectContaining({ id: 9 })],
       tutors: [expect.objectContaining({ id: 3 })]
+    })
+  })
+
+  it('uses deterministic /navigate matching for exact course and tutor detail pages before Groq', async () => {
+    const apiRequest = jest.fn(async (url) => {
+      if (url.startsWith('/api/courses?')) {
+        return {
+          data: url.includes('COS30015')
+            ? [{ id: 15, title: 'COS30015 IT Security', department: 'Computing Technologies' }]
+            : []
+        }
+      }
+
+      if (url.startsWith('/api/tutors?')) {
+        return {
+          data: url.includes('Maya+Chen')
+            ? [{ id: 4, name: 'Maya Chen', department: 'Computing Technologies' }]
+            : []
+        }
+      }
+
+      throw new Error('Unexpected request: ' + url)
+    })
+    const router = { push: jest.fn(async () => {}) }
+
+    await expect(submitCommandPaletteIntent({
+      intent: '/navigate take me to COS30015',
+      apiRequest,
+      router,
+      online: true
+    })).resolves.toEqual({ executed: true })
+    await expect(submitCommandPaletteIntent({
+      intent: '/navigate take me to Maya Chen',
+      apiRequest,
+      router,
+      online: true
+    })).resolves.toEqual({ executed: true })
+
+    expect(router.push).toHaveBeenNthCalledWith(1, {
+      name: 'course-detail',
+      params: { id: 15 }
+    })
+    expect(router.push).toHaveBeenNthCalledWith(2, {
+      name: 'tutor-detail',
+      params: { id: 4 }
+    })
+    expect(apiRequest.mock.calls.map(([url]) => url)).not.toContain('/api/smart-navigation')
+  })
+
+  it('uses deterministic /navigate parsing for broad course and tutor discovery filters', async () => {
+    const apiRequest = jest.fn(async (url) => {
+      if (url.startsWith('/api/courses?') || url.startsWith('/api/tutors?')) {
+        return { data: [] }
+      }
+
+      throw new Error('Unexpected request: ' + url)
+    })
+    const router = { push: jest.fn(async () => {}) }
+
+    await submitCommandPaletteIntent({
+      intent: '/navigate show me cybersecurity courses',
+      apiRequest,
+      router,
+      online: true
+    })
+    await submitCommandPaletteIntent({
+      intent: '/navigate show me all teachers named Chen',
+      apiRequest,
+      router,
+      online: true
+    })
+
+    expect(useCourseStore()).toMatchObject({
+      searchQuery: 'cybersecurity',
+      sortOrder: 'best-match',
+      currentPage: 1
+    })
+    expect(useTutorStore()).toMatchObject({
+      searchQuery: 'Chen',
+      sortOrder: 'best-match',
+      currentPage: 1
+    })
+    expect(router.push).toHaveBeenNthCalledWith(1, {
+      path: '/courses',
+      query: { search: 'cybersecurity' }
+    })
+    expect(router.push).toHaveBeenNthCalledWith(2, {
+      path: '/tutors',
+      query: { search: 'Chen' }
+    })
+    expect(apiRequest.mock.calls.map(([url]) => url)).not.toContain('/api/smart-navigation')
+  })
+
+  it('falls back from uncertain /navigate wording to Groq and keeps unsafe output controlled', async () => {
+    const apiRequest = jest.fn(async (url) => {
+      if (url.startsWith('/api/courses?') || url.startsWith('/api/tutors?')) {
+        return { data: [] }
+      }
+
+      if (url === '/api/smart-navigation') {
+        return {
+          action: 'TOGGLE_FAVORITE',
+          route: '/courses',
+          domain: 'courses',
+          filters: { targetId: '1' },
+          confidence: 1,
+          reason: 'Mutate favorite'
+        }
+      }
+
+      throw new Error('Unexpected request: ' + url)
+    })
+    const router = { push: jest.fn(async () => {}) }
+
+    const result = await submitCommandPaletteIntent({
+      intent: '/navigate please handle this however you think',
+      apiRequest,
+      router,
+      online: true
+    })
+
+    expect(result).toEqual({
+      executed: false,
+      feedback: 'Unsupported navigation command'
+    })
+    expect(apiRequest.mock.calls.map(([url]) => url)).toContain('/api/smart-navigation')
+    expect(router.push).not.toHaveBeenCalled()
+  })
+
+  it('preserves route guard feedback when /navigate fallback navigation is blocked', async () => {
+    const apiRequest = jest.fn(async (url) => {
+      if (url.startsWith('/api/courses?') || url.startsWith('/api/tutors?')) {
+        return { data: [] }
+      }
+
+      if (url === '/api/smart-navigation') {
+        return {
+          action: 'NAVIGATE',
+          route: '/courses',
+          domain: 'courses',
+          filters: {},
+          confidence: 1,
+          reason: 'Courses route'
+        }
+      }
+
+      throw new Error('Unexpected request: ' + url)
+    })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: {} },
+        {
+          path: '/courses',
+          name: 'courses',
+          component: {},
+          beforeEnter: () => false
+        }
+      ]
+    })
+    await router.push('/')
+
+    await expect(submitCommandPaletteIntent({
+      intent: '/navigate maybe the protected directory',
+      apiRequest,
+      router,
+      online: true
+    })).resolves.toEqual({
+      executed: false,
+      feedback: 'Navigation was blocked. You may not have access to that page.'
     })
   })
 })

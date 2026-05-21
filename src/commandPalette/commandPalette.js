@@ -29,6 +29,7 @@ const PAGE_LIMIT_BY_DOMAIN = new Map([
 const MINIMUM_COMMAND_CONFIDENCE = 0.5
 const OFFLINE_UNSUPPORTED_MESSAGE = 'Offline command not supported. Try Courses, Tutors, or a simple search.'
 const RATE_LIMIT_MESSAGE = 'Too many smart-navigation requests. Please wait and try again.'
+const NAVIGATE_PREFIX = '/navigate'
 
 const cleanText = (value, maxLength = 100) => String(value || '').trim().slice(0, maxLength)
 const normalizeSearchText = (value) => cleanText(value, 500).toLowerCase()
@@ -149,6 +150,26 @@ const mapTutorResult = (tutor, tokens) => ({
     bio: highlightField(tutor.bio, tokens)
   }
 })
+
+const getExactCourseMatch = (courses, query) => {
+  const normalizedQuery = normalizeSearchText(query)
+  const compactQuery = compactSearchText(query)
+
+  return courses.find((course) => {
+    const code = getCourseCode(course)
+    const title = cleanText(course.title)
+
+    return normalizeSearchText(code) === normalizedQuery ||
+      compactSearchText(code) === compactQuery ||
+      normalizeSearchText(title) === normalizedQuery
+  }) || null
+}
+
+const getExactTutorMatch = (tutors, query) => {
+  const normalizedQuery = normalizeSearchText(query)
+
+  return tutors.find((tutor) => normalizeSearchText(tutor.name) === normalizedQuery) || null
+}
 
 export const createGlobalPaletteSearch = ({
   intent,
@@ -396,6 +417,18 @@ const createNavigationTarget = ({ route, domain, filters }) => {
   return target
 }
 
+const createNavigationResult = (failure) => {
+  if (isNavigationFailure(failure, NavigationFailureType.aborted) ||
+      isNavigationFailure(failure, NavigationFailureType.cancelled)) {
+    return {
+      executed: false,
+      feedback: 'Navigation was blocked. You may not have access to that page.'
+    }
+  }
+
+  return { executed: true }
+}
+
 const domainToRoute = (domain) => (domain === 'courses' ? '/courses' : '/tutors')
 
 const parseDomain = (value) => {
@@ -411,6 +444,113 @@ const parseDomain = (value) => {
 }
 
 const OFFLINE_DOMAIN_PATTERN = '(courses?|tutors?|teachers?|lecturers?|professors?|instructors?)'
+
+const startsWithNavigateCommand = (intent) => cleanText(intent, 500).toLowerCase().startsWith(NAVIGATE_PREFIX)
+
+const cleanNavigateDiscoveryText = (value, domain) => {
+  let text = cleanText(value, 100)
+    .replace(/^\/navigate\b/i, '')
+    .replace(/\b(?:please|all)\b/gi, ' ')
+    .replace(/\b(?:take me to|bring me to|go to|open|show me|find|search for|search)\b/gi, ' ')
+    .replace(/\b(?:for|about|matching)\b/gi, ' ')
+
+  if (domain === 'courses') {
+    text = text.replace(/\bcourses?\b/gi, ' ')
+  }
+
+  if (domain === 'tutors') {
+    text = text.replace(/\b(?:tutors?|teachers?|lecturers?|professors?|instructors?)\b/gi, ' ')
+  }
+
+  return cleanText(text.replace(/\s+/g, ' '))
+}
+
+const parseNavigateDiscoveryIntent = (intent) => {
+  const rawIntent = cleanText(intent, 500)
+  const body = cleanText(rawIntent.replace(/^\/navigate\b/i, ''), 500)
+  const normalizedBody = normalizeSearchText(body).replace(/\s+/g, ' ')
+
+  if (!body) {
+    return null
+  }
+
+  const namedTutorMatch = normalizedBody.match(new RegExp(`${OFFLINE_DOMAIN_PATTERN}\\s+named\\s+(.+)$`))
+
+  if (namedTutorMatch) {
+    const domain = parseDomain(namedTutorMatch[1])
+    const search = cleanText(body.slice(normalizedBody.indexOf(' named ') + 7))
+
+    if (domain === 'tutors' && search) {
+      return { domain, search }
+    }
+  }
+
+  const words = normalizedBody.split(' ')
+  const domainWord = words.find((word) => parseDomain(word))
+  const domain = parseDomain(domainWord)
+
+  if (domain) {
+    return {
+      domain,
+      search: cleanNavigateDiscoveryText(body, domain)
+    }
+  }
+
+  return {
+    domain: null,
+    search: cleanNavigateDiscoveryText(body, null)
+  }
+}
+
+const fetchNavigateDiscoveryResults = async ({ search, apiRequest }) => {
+  if (!search) {
+    return createGlobalPaletteSearch({ intent: search })
+  }
+
+  return fetchGlobalPaletteSearch({
+    intent: search,
+    apiRequest,
+    limit: 3
+  })
+}
+
+const executeDeterministicNavigateCommand = async ({ intent, apiRequest, router }) => {
+  const discovery = parseNavigateDiscoveryIntent(intent)
+
+  if (!discovery?.search) {
+    return null
+  }
+
+  const results = await fetchNavigateDiscoveryResults({
+    search: discovery.search,
+    apiRequest
+  })
+  const exactCourse = (!discovery.domain || discovery.domain === 'courses')
+    ? getExactCourseMatch(results.courses, discovery.search)
+    : null
+  const exactTutor = (!discovery.domain || discovery.domain === 'tutors')
+    ? getExactTutorMatch(results.tutors, discovery.search)
+    : null
+  const exactMatches = [exactCourse, exactTutor].filter(Boolean)
+
+  if (exactMatches.length === 1) {
+    const failure = await executeGlobalPaletteResult(exactMatches[0], router)
+    return createNavigationResult(failure)
+  }
+
+  if (discovery.domain) {
+    return executeSmartNavigationCommand({
+      action: 'SEARCH',
+      route: domainToRoute(discovery.domain),
+      domain: discovery.domain,
+      filters: { search: discovery.search },
+      confidence: 1,
+      reason: 'Deterministic discovery navigation'
+    }, router)
+  }
+
+  return null
+}
 
 export const parseOfflineCommand = (intent) => {
   const rawIntent = cleanText(intent, 500)
@@ -474,15 +614,7 @@ export const executeSmartNavigationCommand = async (command, router) => {
 
   const failure = await router.push(createNavigationTarget(safeCommand))
 
-  if (isNavigationFailure(failure, NavigationFailureType.aborted) ||
-      isNavigationFailure(failure, NavigationFailureType.cancelled)) {
-    return {
-      executed: false,
-      feedback: 'Navigation was blocked. You may not have access to that page.'
-    }
-  }
-
-  return { executed: true }
+  return createNavigationResult(failure)
 }
 
 export const executeGlobalPaletteResult = (result, router) => {
@@ -544,6 +676,18 @@ export const submitCommandPaletteIntent = async ({
   }
 
   try {
+    if (online && startsWithNavigateCommand(cleanIntent)) {
+      const deterministicResult = await executeDeterministicNavigateCommand({
+        intent: cleanIntent,
+        apiRequest,
+        router
+      })
+
+      if (deterministicResult) {
+        return deterministicResult
+      }
+    }
+
     const command = online
       ? await requestSmartNavigationCommand(cleanIntent, apiRequest)
       : parseOfflineCommand(cleanIntent)
