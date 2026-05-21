@@ -612,6 +612,16 @@ const buildReviewStatsJoin = (entityType, entityAlias) => `
         GROUP BY entity_id
       ) review_stats ON review_stats.entity_id = ${entityAlias}.id`;
 
+const buildCourseTutorSearchJoin = () => `
+      LEFT JOIN (
+        SELECT
+          ct.course_id,
+          GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ' ') AS tutor_names_search
+        FROM Course_Tutors ct
+        INNER JOIN Tutors t ON t.id = ct.tutor_id
+        GROUP BY ct.course_id
+      ) course_tutor_search ON course_tutor_search.course_id = c.id`;
+
 const buildTutorFilters = ({ search, department }) => {
   const clauses = [];
   const params = [];
@@ -1840,17 +1850,19 @@ app.get('/api/courses', async (req, res) => {
   const paginationParams = pagination.isPaginated ? [pagination.limit, pagination.offset] : [];
   const needsReviewStats = sort !== 'alphabetical';
   const reviewStatsJoin = needsReviewStats ? buildReviewStatsJoin('course', 'c') : '';
+  const tutorSearchJoin = searchSpec ? buildCourseTutorSearchJoin() : '';
+  const tutorSearchRankingField = "COALESCE(course_tutor_search.tutor_names_search, '')";
   const searchRanking = buildSearchRanking({
     searchSpec,
     primaryField: 'c.title',
     codeField: 'SUBSTRING_INDEX(c.title, " ", 1)',
     prefixFields: ['c.department'],
-    allKeywordFields: ['c.title', 'c.department', 'c.description'],
+    allKeywordFields: ['c.title', 'c.department', 'c.description', tutorSearchRankingField],
     fieldPriorityGroups: [
       ['c.title'],
       ['c.department'],
       ['c.description'],
-      ['tutor_names']
+      [tutorSearchRankingField]
     ],
     stableFields: ['c.title ASC', 'c.id ASC']
   });
@@ -1886,6 +1898,7 @@ app.get('/api/courses', async (req, res) => {
       LEFT JOIN Tutors t ON t.id = ct.tutor_id
       LEFT JOIN Favorites f ON f.entity_type = "course" AND f.entity_id = c.id AND f.user_id = ?
       ${reviewStatsJoin}
+      ${tutorSearchJoin}
       ${whereClause}
       GROUP BY c.id, c.title, c.department, c.description, c.created_at, c.updated_at, f.id${reviewStatsGroupFields}
       ${orderClause}
@@ -1907,6 +1920,7 @@ app.get('/api/courses', async (req, res) => {
       LEFT JOIN Course_Tutors ct ON ct.course_id = c.id
       LEFT JOIN Tutors t ON t.id = ct.tutor_id
       ${reviewStatsJoin}
+      ${tutorSearchJoin}
       ${whereClause}
       GROUP BY c.id, c.title, c.department, c.description, c.created_at, c.updated_at${reviewStatsGroupFields}
       ${orderClause}

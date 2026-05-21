@@ -1,16 +1,23 @@
 <script setup>
 import { onMounted, onUnmounted, watch } from 'vue'
 import { storeToRefs } from 'pinia'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
 import BaseTransitionList from '../components/common/BaseTransitionList.vue'
 import FavoriteButton from '../components/common/FavoriteButton.vue'
 import PaginationControls from '../components/common/PaginationControls.vue'
+import {
+  areDirectoryRouteQueriesEqual,
+  createDirectoryRouteQuery,
+  parseDirectoryRouteQuery
+} from '../router/directoryQuerySync'
 import { COURSE_PAGE_LIMIT, COURSE_SORT_OPTIONS, useCourseStore } from '../store/courseStore'
 import { useUserStore } from '../store/userStore'
 
 const userStore = useUserStore()
 const courseStore = useCourseStore()
+const route = useRoute()
+const router = useRouter()
 const {
   courses,
   loading,
@@ -27,10 +34,32 @@ const {
   hasActiveFilters
 } = storeToRefs(courseStore)
 let searchTimeout = null
+let isApplyingRouteQuery = false
 
-const scheduleFetchCourses = () => {
+const syncRouteFromStore = async () => {
+  const query = createDirectoryRouteQuery(courseStore, COURSE_SORT_OPTIONS)
+
+  if (areDirectoryRouteQueriesEqual(route.query, query)) {
+    await courseStore.loadCourses()
+    return
+  }
+
+  await router.push({ name: 'courses', query })
+}
+
+const scheduleRouteSync = () => {
   window.clearTimeout(searchTimeout)
-  searchTimeout = window.setTimeout(() => courseStore.loadCourses(), 300)
+  searchTimeout = window.setTimeout(() => {
+    void syncRouteFromStore()
+  }, 300)
+}
+
+const applyRouteQuery = () => {
+  isApplyingRouteQuery = true
+  courseStore.applyDirectoryFilters(parseDirectoryRouteQuery(route.query, COURSE_SORT_OPTIONS))
+  window.setTimeout(() => {
+    isApplyingRouteQuery = false
+  }, 0)
 }
 
 const clearFilters = () => {
@@ -38,13 +67,28 @@ const clearFilters = () => {
 }
 
 const setPage = (pageNumber) => {
-  courseStore.setPage(pageNumber)
+  courseStore.currentPage = pageNumber
+  void syncRouteFromStore()
 }
 
 watch([searchQuery, departmentFilter, sortOrder], () => {
+  if (isApplyingRouteQuery) {
+    return
+  }
+
   courseStore.currentPage = 1
-  scheduleFetchCourses()
+  scheduleRouteSync()
 })
+
+watch(
+  () => route.query,
+  () => {
+    window.clearTimeout(searchTimeout)
+    applyRouteQuery()
+    void courseStore.loadCourses()
+  },
+  { deep: true }
+)
 
 watch(
   () => courseStore.getViewerScope(),
@@ -54,7 +98,10 @@ watch(
   }
 )
 
-onMounted(() => courseStore.loadCourses())
+onMounted(() => {
+  applyRouteQuery()
+  courseStore.loadCourses()
+})
 
 onUnmounted(() => {
   window.clearTimeout(searchTimeout)

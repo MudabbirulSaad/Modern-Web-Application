@@ -95,7 +95,15 @@ describe('command palette behavior', () => {
     expect(courseStore.departmentFilter).toBe('ICT')
     expect(courseStore.sortOrder).toBe('recently-active')
     expect(courseStore.currentPage).toBe(2)
-    expect(router.push).toHaveBeenCalledWith({ path: '/courses' })
+    expect(router.push).toHaveBeenCalledWith({
+      path: '/courses',
+      query: {
+        search: 'Databases',
+        department: 'ICT',
+        sort: 'recently-active',
+        page: '2'
+      }
+    })
   })
 
   it('applies validated tutor filters before navigation', async () => {
@@ -122,7 +130,15 @@ describe('command palette behavior', () => {
     expect(tutorStore.departmentFilter).toBe('Computer Science')
     expect(tutorStore.sortOrder).toBe('alphabetical')
     expect(tutorStore.currentPage).toBe(3)
-    expect(router.push).toHaveBeenCalledWith({ path: '/tutors' })
+    expect(router.push).toHaveBeenCalledWith({
+      path: '/tutors',
+      query: {
+        search: 'Ada',
+        department: 'Computer Science',
+        sort: 'alphabetical',
+        page: '3'
+      }
+    })
   })
 
   it('rejects invalid filter commands inline without navigating', async () => {

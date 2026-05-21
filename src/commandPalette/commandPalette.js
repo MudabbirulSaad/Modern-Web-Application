@@ -1,4 +1,5 @@
 import { NavigationFailureType, isNavigationFailure } from 'vue-router'
+import { createDirectoryRouteQuery } from '../router/directoryQuerySync'
 import {
   COURSE_PAGE_LIMIT,
   COURSE_SORT_OPTIONS,
@@ -168,6 +169,30 @@ const applyDirectoryFilters = ({ domain, filters }) => {
   }
 }
 
+const createNavigationTarget = ({ route, domain, filters }) => {
+  const target = { path: route }
+
+  if (!domain) {
+    return target
+  }
+
+  const sortOptions = domain === 'courses'
+    ? COURSE_SORT_OPTIONS
+    : TUTOR_SORT_OPTIONS
+  const query = createDirectoryRouteQuery({
+    searchQuery: filters.search,
+    departmentFilter: filters.department,
+    sortOrder: filters.sort,
+    currentPage: filters.page
+  }, sortOptions)
+
+  if (Object.keys(query).length > 0) {
+    target.query = query
+  }
+
+  return target
+}
+
 const domainToRoute = (domain) => (domain === 'courses' ? '/courses' : '/tutors')
 
 const parseDomain = (value) => {
@@ -244,7 +269,7 @@ export const executeSmartNavigationCommand = async (command, router) => {
     applyDirectoryFilters(safeCommand)
   }
 
-  const failure = await router.push({ path: safeCommand.route })
+  const failure = await router.push(createNavigationTarget(safeCommand))
 
   if (isNavigationFailure(failure, NavigationFailureType.aborted) ||
       isNavigationFailure(failure, NavigationFailureType.cancelled)) {

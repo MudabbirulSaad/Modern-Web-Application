@@ -980,6 +980,8 @@ describe('GET /api/courses', () => {
     expect(mockConn.query.mock.calls[1][0]).toContain("LOWER(REGEXP_REPLACE(CONCAT_WS(' ', c.title, c.description), '[^[:alnum:]]+', '')) LIKE ?");
     expect(mockConn.query.mock.calls[1][0]).toContain('EXISTS (');
     expect(mockConn.query.mock.calls[1][0]).toContain('t_search.name');
+    expect(mockConn.query.mock.calls[1][0]).toContain('course_tutor_search.tutor_names_search');
+    expect(mockConn.query.mock.calls[1][0]).not.toContain("CONCAT_WS(' ', tutor_names)");
     expect(mockConn.query.mock.calls[1][0]).toContain('AND c.department = ?');
     expect(mockConn.query.mock.calls[1][0]).toContain('ORDER BY CASE');
     expect(mockConn.query.mock.calls[1][1]).toEqual(expect.arrayContaining([
