@@ -788,6 +788,7 @@ describe('Protected course management endpoints', () => {
       commit: jest.fn().mockResolvedValue(),
       rollback: jest.fn().mockResolvedValue(),
       query: jest.fn()
+        .mockResolvedValueOnce([])
         .mockResolvedValueOnce({ insertId: 4 })
         .mockResolvedValueOnce({ affectedRows: 2 })
         .mockResolvedValueOnce([createdCourse])
@@ -811,15 +812,54 @@ describe('Protected course management endpoints', () => {
     expect(mockConn.beginTransaction).toHaveBeenCalled();
     expect(mockConn.query).toHaveBeenNthCalledWith(
       1,
+      'SELECT id FROM Courses WHERE LOWER(TRIM(title)) = ? AND LOWER(TRIM(department)) = ? LIMIT 1',
+      ['cos10005 web development', 'computer science']
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
       'INSERT INTO Courses (title, department, description) VALUES (?, ?, ?)',
       ['COS10005 Web Development', 'Computer Science', 'Build accessible web applications.']
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(
-      2,
+      3,
       'INSERT INTO Course_Tutors (course_id, tutor_id) VALUES (?, ?), (?, ?)',
       [4, 1, 4, 3]
     );
     expect(mockConn.commit).toHaveBeenCalled();
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return a validation error when creating a duplicate course', async () => {
+    const mockConn = {
+      beginTransaction: jest.fn().mockResolvedValue(),
+      commit: jest.fn().mockResolvedValue(),
+      rollback: jest.fn().mockResolvedValue(),
+      query: jest.fn().mockResolvedValueOnce([{ id: 1 }]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/courses')
+      .set('Cookie', adminCookie())
+      .send({
+        title: ' cos10005 web development ',
+        department: ' computer science ',
+        description: 'Another copy.',
+        tutorIds: [1]
+      });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'A course with this title and department already exists' });
+    expect(mockConn.query).toHaveBeenCalledTimes(1);
+    expect(mockConn.query).toHaveBeenCalledWith(
+      'SELECT id FROM Courses WHERE LOWER(TRIM(title)) = ? AND LOWER(TRIM(department)) = ? LIMIT 1',
+      ['cos10005 web development', 'computer science']
+    );
+    expect(mockConn.rollback).toHaveBeenCalled();
+    expect(mockConn.commit).not.toHaveBeenCalled();
     expect(mockConn.release).toHaveBeenCalled();
 
     spy.mockRestore();
@@ -862,6 +902,7 @@ describe('Protected course management endpoints', () => {
       commit: jest.fn().mockResolvedValue(),
       rollback: jest.fn().mockResolvedValue(),
       query: jest.fn()
+        .mockResolvedValueOnce([])
         .mockResolvedValueOnce({ affectedRows: 1 })
         .mockResolvedValueOnce({ affectedRows: 2 })
         .mockResolvedValueOnce({ affectedRows: 1 })
@@ -885,16 +926,110 @@ describe('Protected course management endpoints', () => {
     expect(res.body).toEqual({ status: 'ok', data: { ...updatedCourse, tutors: assignedTutors } });
     expect(mockConn.query).toHaveBeenNthCalledWith(
       1,
+      'SELECT id FROM Courses WHERE LOWER(TRIM(title)) = ? AND LOWER(TRIM(department)) = ? AND id <> ? LIMIT 1',
+      ['cos10005 web development', 'computer science', '4']
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
       'UPDATE Courses SET title = ?, department = ?, description = ? WHERE id = ?',
       ['COS10005 Web Development', 'Computer Science', 'Build accessible and responsive web applications.', '4']
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(
-      2,
+      3,
       'DELETE FROM Course_Tutors WHERE course_id = ?',
       ['4']
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(
-      3,
+      4,
+      'INSERT INTO Course_Tutors (course_id, tutor_id) VALUES (?, ?)',
+      ['4', 2]
+    );
+    expect(mockConn.commit).toHaveBeenCalled();
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return a validation error when updating a course to duplicate another course', async () => {
+    const mockConn = {
+      beginTransaction: jest.fn().mockResolvedValue(),
+      commit: jest.fn().mockResolvedValue(),
+      rollback: jest.fn().mockResolvedValue(),
+      query: jest.fn().mockResolvedValueOnce([{ id: 1 }]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/courses/4')
+      .set('Cookie', adminCookie())
+      .send({
+        title: 'COS30043 Interface Design and Development',
+        department: 'Computer Science',
+        description: 'Colliding course.',
+        tutorIds: [1]
+      });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'A course with this title and department already exists' });
+    expect(mockConn.query).toHaveBeenCalledTimes(1);
+    expect(mockConn.query).toHaveBeenCalledWith(
+      'SELECT id FROM Courses WHERE LOWER(TRIM(title)) = ? AND LOWER(TRIM(department)) = ? AND id <> ? LIMIT 1',
+      ['cos30043 interface design and development', 'computer science', '4']
+    );
+    expect(mockConn.rollback).toHaveBeenCalled();
+    expect(mockConn.commit).not.toHaveBeenCalled();
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should deduplicate submitted tutor assignments when updating a course', async () => {
+    const updatedCourse = {
+      id: 4,
+      title: 'COS10005 Web Development',
+      department: 'Computer Science',
+      description: 'Build accessible and responsive web applications.',
+      created_at: '2026-05-18T00:00:00.000Z',
+      updated_at: '2026-05-18T00:00:00.000Z'
+    };
+    const assignedTutors = [
+      {
+        id: 2,
+        name: 'Prof Liam Patel',
+        department: 'Information Systems',
+        bio: 'Teaches database design and enterprise systems.'
+      }
+    ];
+    const mockConn = {
+      beginTransaction: jest.fn().mockResolvedValue(),
+      commit: jest.fn().mockResolvedValue(),
+      rollback: jest.fn().mockResolvedValue(),
+      query: jest.fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce({ affectedRows: 2 })
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce([updatedCourse])
+        .mockResolvedValueOnce(assignedTutors),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/courses/4')
+      .set('Cookie', adminCookie())
+      .send({
+        title: 'COS10005 Web Development',
+        department: 'Computer Science',
+        description: 'Build accessible and responsive web applications.',
+        tutorIds: [2, '2', 2]
+      });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: { ...updatedCourse, tutors: assignedTutors } });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      4,
       'INSERT INTO Course_Tutors (course_id, tutor_id) VALUES (?, ?)',
       ['4', 2]
     );
@@ -909,7 +1044,9 @@ describe('Protected course management endpoints', () => {
       beginTransaction: jest.fn().mockResolvedValue(),
       commit: jest.fn().mockResolvedValue(),
       rollback: jest.fn().mockResolvedValue(),
-      query: jest.fn().mockResolvedValue({ affectedRows: 0 }),
+      query: jest.fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce({ affectedRows: 0 }),
       release: jest.fn()
     };
     const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);

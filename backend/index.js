@@ -117,6 +117,37 @@ const readCoursePayload = (body) => ({
   )]
 });
 
+const normalizeCourseIdentity = (value) => String(value || '').trim().toLowerCase();
+
+const COURSE_DUPLICATE_MESSAGE = 'A course with this title and department already exists';
+
+const isCourseDuplicateError = (err) => (
+  Number(err?.errno) === 1062
+  || err?.code === 'ER_DUP_ENTRY'
+  || String(err?.message || '').includes('uniq_courses_normalized_identity')
+);
+
+const hasDuplicateCourse = async (conn, { title, department }, exceptCourseId = null) => {
+  const normalizedTitle = normalizeCourseIdentity(title);
+  const normalizedDepartment = normalizeCourseIdentity(department);
+
+  if (exceptCourseId === null) {
+    const rows = await conn.query(
+      'SELECT id FROM Courses WHERE LOWER(TRIM(title)) = ? AND LOWER(TRIM(department)) = ? LIMIT 1',
+      [normalizedTitle, normalizedDepartment]
+    );
+
+    return rows.length > 0;
+  }
+
+  const rows = await conn.query(
+    'SELECT id FROM Courses WHERE LOWER(TRIM(title)) = ? AND LOWER(TRIM(department)) = ? AND id <> ? LIMIT 1',
+    [normalizedTitle, normalizedDepartment, exceptCourseId]
+  );
+
+  return rows.length > 0;
+};
+
 const readDirectoryFilters = (query) => ({
   search: String(query.search || '').trim(),
   department: String(query.department || '').trim()
@@ -1335,6 +1366,13 @@ app.post('/api/courses', requireAdmin, async (req, res) => {
   try {
     conn = await pool.getConnection();
     await conn.beginTransaction();
+
+    if (await hasDuplicateCourse(conn, { title, department })) {
+      await conn.rollback();
+      res.status(400).json({ status: 'error', message: COURSE_DUPLICATE_MESSAGE });
+      return;
+    }
+
     const result = await conn.query(
       'INSERT INTO Courses (title, department, description) VALUES (?, ?, ?)',
       [title, department, description]
@@ -1348,6 +1386,12 @@ app.post('/api/courses', requireAdmin, async (req, res) => {
     res.status(201).json({ status: 'ok', data: course });
   } catch (err) {
     if (conn) await conn.rollback();
+
+    if (isCourseDuplicateError(err)) {
+      res.status(400).json({ status: 'error', message: COURSE_DUPLICATE_MESSAGE });
+      return;
+    }
+
     console.error('Course create error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to create course' });
   } finally {
@@ -1367,6 +1411,13 @@ app.put('/api/courses/:id', requireAdmin, async (req, res) => {
   try {
     conn = await pool.getConnection();
     await conn.beginTransaction();
+
+    if (await hasDuplicateCourse(conn, { title, department }, req.params.id)) {
+      await conn.rollback();
+      res.status(400).json({ status: 'error', message: COURSE_DUPLICATE_MESSAGE });
+      return;
+    }
+
     const result = await conn.query(
       'UPDATE Courses SET title = ?, department = ?, description = ? WHERE id = ?',
       [title, department, description, req.params.id]
@@ -1389,6 +1440,12 @@ app.put('/api/courses/:id', requireAdmin, async (req, res) => {
     res.json({ status: 'ok', data: course });
   } catch (err) {
     if (conn) await conn.rollback();
+
+    if (isCourseDuplicateError(err)) {
+      res.status(400).json({ status: 'error', message: COURSE_DUPLICATE_MESSAGE });
+      return;
+    }
+
     console.error('Course update error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to update course' });
   } finally {
