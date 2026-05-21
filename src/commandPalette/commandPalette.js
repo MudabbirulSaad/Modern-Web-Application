@@ -175,12 +175,14 @@ const parseDomain = (value) => {
     return 'courses'
   }
 
-  if (['tutor', 'tutors'].includes(value)) {
+  if (['tutor', 'tutors', 'teacher', 'teachers', 'lecturer', 'lecturers', 'professor', 'professors', 'instructor', 'instructors'].includes(value)) {
     return 'tutors'
   }
 
   return null
 }
+
+const OFFLINE_DOMAIN_PATTERN = '(courses?|tutors?|teachers?|lecturers?|professors?|instructors?)'
 
 export const parseOfflineCommand = (intent) => {
   const rawIntent = cleanText(intent, 500)
@@ -202,8 +204,8 @@ export const parseOfflineCommand = (intent) => {
     return createRouteCommand('/tutors')
   }
 
-  const searchMatch = normalizedIntent.match(/^(?:search|find)\s+(courses?|tutors?)\s+(?:for|about|matching)\s+(.+)$/)
-    || normalizedIntent.match(/^(courses?|tutors?)\s+(?:search|for)\s+(.+)$/)
+  const searchMatch = normalizedIntent.match(new RegExp(`^(?:search|find)\\s+${OFFLINE_DOMAIN_PATTERN}\\s+(?:for|about|matching)\\s+(.+)$`))
+    || normalizedIntent.match(new RegExp(`^${OFFLINE_DOMAIN_PATTERN}\\s+(?:search|for)\\s+(.+)$`))
 
   if (searchMatch) {
     const domain = parseDomain(searchMatch[1])
@@ -214,7 +216,7 @@ export const parseOfflineCommand = (intent) => {
     }
   }
 
-  const departmentMatch = normalizedIntent.match(/^(courses?|tutors?)\s+(?:in|from|department)\s+(.+)$/)
+  const departmentMatch = normalizedIntent.match(new RegExp(`^${OFFLINE_DOMAIN_PATTERN}\\s+(?:in|from|department)\\s+(.+)$`))
 
   if (departmentMatch) {
     const domain = parseDomain(departmentMatch[1])

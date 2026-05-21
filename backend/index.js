@@ -389,6 +389,217 @@ const readDirectorySort = (query) => {
   return 'alphabetical';
 };
 
+const DIRECTORY_SEARCH_TOKEN_ALIASES = new Map([
+  ['it', ['information technology']],
+  ['teacher', ['tutor']],
+  ['lecturer', ['tutor']],
+  ['professor', ['tutor']],
+  ['instructor', ['tutor']]
+]);
+
+const DIRECTORY_SEARCH_PHRASE_ALIASES = new Map([
+  ['cyber security', ['cybersecurity']],
+  ['cybersecurity', ['cyber security']],
+  ['it security', ['cyber', 'cyber security', 'cybersecurity']]
+]);
+
+const normalizeDirectoryText = (value) => String(value || '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, ' ')
+  .trim()
+  .replace(/\s+/g, ' ');
+
+const uniqueValues = (values) => [...new Set(values.filter(Boolean))];
+
+const directoryTokenVariants = (token) => {
+  const variants = [token];
+
+  if (token.endsWith('ies') && token.length > 3) {
+    variants.push(`${token.slice(0, -3)}y`);
+  } else if (token.endsWith('s') && token.length > 3) {
+    variants.push(token.slice(0, -1));
+  } else if (token.endsWith('y') && token.length > 2) {
+    variants.push(`${token.slice(0, -1)}ies`);
+  } else if (token.length > 2) {
+    variants.push(`${token}s`);
+  }
+
+  return uniqueValues(variants);
+};
+
+const directoryPhraseVariants = (tokens) => {
+  const variants = [];
+
+  for (let start = 0; start < tokens.length; start += 1) {
+    for (let end = start + 2; end <= tokens.length; end += 1) {
+      const phrase = tokens.slice(start, end).join(' ');
+      variants.push(phrase, ...(DIRECTORY_SEARCH_PHRASE_ALIASES.get(phrase) || []));
+    }
+  }
+
+  return uniqueValues(variants);
+};
+
+const createDirectorySearchSpec = (search) => {
+  const normalized = normalizeDirectoryText(search);
+
+  if (!normalized) {
+    return null;
+  }
+
+  const tokens = uniqueValues(normalized.split(' '));
+  const tokenVariants = uniqueValues(tokens.flatMap(directoryTokenVariants));
+  const expandedPhrases = uniqueValues([
+    normalized,
+    tokens.join(''),
+    ...tokenVariants,
+    ...directoryPhraseVariants(tokens),
+    ...tokenVariants.flatMap((token) => DIRECTORY_SEARCH_TOKEN_ALIASES.get(token) || [])
+  ]);
+
+  return {
+    normalized,
+    tokens,
+    phrases: uniqueValues(expandedPhrases),
+    compactPhrases: uniqueValues(expandedPhrases.map((phrase) => phrase.replace(/\s+/g, '')))
+  };
+};
+
+const sqlTextExpression = (fields) => `LOWER(CONCAT_WS(' ', ${fields.join(', ')}))`;
+const sqlCompactExpression = (fields) => `LOWER(REGEXP_REPLACE(CONCAT_WS(' ', ${fields.join(', ')}), '[^[:alnum:]]+', ''))`;
+
+const addLikeParams = (params, values) => {
+  values.forEach((value) => params.push(`%${value}%`));
+};
+
+const buildDirectorySearchCondition = (fieldGroups, searchSpec) => {
+  if (!searchSpec) {
+    return { clause: '', params: [] };
+  }
+
+  const clauses = [];
+  const params = [];
+
+  fieldGroups.forEach((fields) => {
+    const textExpression = sqlTextExpression(fields);
+    const compactExpression = sqlCompactExpression(fields);
+    clauses.push(`(${textExpression} LIKE ? OR ${compactExpression} LIKE ?)`);
+    params.push(`%${searchSpec.normalized}%`, `%${searchSpec.tokens.join('')}%`);
+  });
+
+  searchSpec.phrases.forEach((phrase) => {
+    fieldGroups.forEach((fields) => {
+      clauses.push(`${sqlTextExpression(fields)} LIKE ?`);
+      params.push(`%${phrase}%`);
+    });
+  });
+
+  searchSpec.compactPhrases.forEach((phrase) => {
+    fieldGroups.forEach((fields) => {
+      clauses.push(`${sqlCompactExpression(fields)} LIKE ?`);
+      params.push(`%${phrase}%`);
+    });
+  });
+
+  return {
+    clause: `(${clauses.join(' OR ')})`,
+    params
+  };
+};
+
+const buildAllTokenExpression = (fields, tokens) => {
+  const expression = sqlTextExpression(fields);
+  return tokens.map(() => `${expression} LIKE ?`).join(' AND ');
+};
+
+const buildAnyTokenExpression = (fields, tokens) => {
+  const expression = sqlTextExpression(fields);
+  return tokens.map(() => `${expression} LIKE ?`).join(' OR ');
+};
+
+const buildTokenMatchScoreExpression = (fields, tokens) => {
+  const expression = sqlTextExpression(fields);
+  return tokens.map(() => `CASE WHEN ${expression} LIKE ? THEN 1 ELSE 0 END`).join(' + ');
+};
+
+const buildSearchRanking = ({ searchSpec, primaryField, codeField = null, prefixFields = [], allKeywordFields = [], fieldPriorityGroups = [], stableFields = [] }) => {
+  if (!searchSpec) {
+    return { clause: '', params: [] };
+  }
+
+  const params = [];
+  const cases = [];
+  const exactFields = uniqueValues([codeField, primaryField]);
+  const prefixMatchFields = uniqueValues([codeField, primaryField, ...prefixFields]);
+  const partialKeywordFields = uniqueValues([
+    ...allKeywordFields,
+    ...fieldPriorityGroups.flat()
+  ]);
+
+  exactFields.forEach((field) => {
+    cases.push(`WHEN ${sqlTextExpression([field])} = ? THEN 0`);
+    params.push(searchSpec.normalized);
+  });
+
+  prefixMatchFields.forEach((field) => {
+    cases.push(`WHEN ${sqlTextExpression([field])} LIKE ? THEN 1`);
+    params.push(`${searchSpec.normalized}%`);
+  });
+
+  if (allKeywordFields.length > 0) {
+    cases.push(`WHEN ${buildAllTokenExpression(allKeywordFields, searchSpec.tokens)} THEN 2`);
+    addLikeParams(params, searchSpec.tokens);
+  }
+
+  if (partialKeywordFields.length > 0) {
+    cases.push(`WHEN ${buildAnyTokenExpression(partialKeywordFields, searchSpec.tokens)} THEN 3`);
+    addLikeParams(params, searchSpec.tokens);
+  }
+
+  fieldPriorityGroups.forEach((fields, index) => {
+    cases.push(`WHEN ${buildAnyTokenExpression(fields, searchSpec.tokens)} THEN ${4 + index}`);
+    addLikeParams(params, searchSpec.tokens);
+  });
+
+  const partialScoreClause = partialKeywordFields.length > 0
+    ? `, (${buildTokenMatchScoreExpression(partialKeywordFields, searchSpec.tokens)}) DESC`
+    : '';
+
+  if (partialKeywordFields.length > 0) {
+    addLikeParams(params, searchSpec.tokens);
+  }
+
+  return {
+    clause: `CASE ${cases.join(' ')} ELSE ${4 + fieldPriorityGroups.length} END ASC${partialScoreClause}, ${stableFields.join(', ')}`,
+    params
+  };
+};
+
+const buildDirectoryOrderClause = (sort, entityAlias, labelField, searchRanking = null) => {
+  const labelExpression = `${entityAlias}.${labelField}`;
+  const stableOrder = `${labelExpression} ASC, ${entityAlias}.id ASC`;
+
+  if (searchRanking?.clause) {
+    const sortTieBreaker = sort === 'recently-active'
+      ? `, GREATEST(${entityAlias}.updated_at, COALESCE(review_stats.latest_review_at, ${entityAlias}.updated_at)) DESC`
+      : sort === 'best-match'
+        ? ', (COALESCE(review_stats.average_rating, 0) * 2) + LOG10(COALESCE(review_stats.review_count, 0) + 1) DESC, COALESCE(review_stats.review_count, 0) DESC'
+        : '';
+
+    return `ORDER BY ${searchRanking.clause}${sortTieBreaker}`;
+  }
+
+  if (sort === 'best-match') {
+    return `ORDER BY (COALESCE(review_stats.average_rating, 0) * 2) + LOG10(COALESCE(review_stats.review_count, 0) + 1) DESC, COALESCE(review_stats.review_count, 0) DESC, ${labelExpression} ASC`;
+  }
+
+  if (sort === 'recently-active') {
+    return `ORDER BY GREATEST(${entityAlias}.updated_at, COALESCE(review_stats.latest_review_at, ${entityAlias}.updated_at)) DESC, ${labelExpression} ASC`;
+  }
+
+  return `ORDER BY ${labelExpression} ASC`;
+};
+
 const buildReviewStatsJoin = (entityType, entityAlias) => `
       LEFT JOIN (
         SELECT
@@ -401,25 +612,20 @@ const buildReviewStatsJoin = (entityType, entityAlias) => `
         GROUP BY entity_id
       ) review_stats ON review_stats.entity_id = ${entityAlias}.id`;
 
-const buildDirectoryOrderClause = (sort, entityAlias, labelField) => {
-  if (sort === 'best-match') {
-    return `ORDER BY (COALESCE(review_stats.average_rating, 0) * 2) + LOG10(COALESCE(review_stats.review_count, 0) + 1) DESC, COALESCE(review_stats.review_count, 0) DESC, ${entityAlias}.${labelField} ASC`;
-  }
-
-  if (sort === 'recently-active') {
-    return `ORDER BY GREATEST(${entityAlias}.updated_at, COALESCE(review_stats.latest_review_at, ${entityAlias}.updated_at)) DESC, ${entityAlias}.${labelField} ASC`;
-  }
-
-  return `ORDER BY ${entityAlias}.${labelField} ASC`;
-};
-
 const buildTutorFilters = ({ search, department }) => {
   const clauses = [];
   const params = [];
+  const searchSpec = createDirectorySearchSpec(search);
 
-  if (search) {
-    clauses.push('(name LIKE ? OR bio LIKE ?)');
-    params.push(`%${search}%`, `%${search}%`);
+  if (searchSpec) {
+    const searchCondition = buildDirectorySearchCondition([
+      ['name', 'bio'],
+      ['name'],
+      ['department'],
+      ['bio']
+    ], searchSpec);
+    clauses.push(searchCondition.clause);
+    params.push(...searchCondition.params);
   }
 
   if (department) {
@@ -429,22 +635,34 @@ const buildTutorFilters = ({ search, department }) => {
 
   return {
     whereClause: clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '',
-    params
+    params,
+    searchSpec
   };
 };
 
 const buildCourseFilters = ({ search, department }) => {
   const clauses = [];
   const params = [];
+  const searchSpec = createDirectorySearchSpec(search);
 
-  if (search) {
-    clauses.push(`(c.title LIKE ? OR c.description LIKE ? OR EXISTS (
+  if (searchSpec) {
+    const courseSearchCondition = buildDirectorySearchCondition([
+      ['c.title', 'c.description'],
+      ['c.title'],
+      ['c.department'],
+      ['c.description']
+    ], searchSpec);
+    const tutorSearchCondition = buildDirectorySearchCondition([
+      ['t_search.name']
+    ], searchSpec);
+
+    clauses.push(`(${courseSearchCondition.clause} OR EXISTS (
       SELECT 1
       FROM Course_Tutors ct_search
       INNER JOIN Tutors t_search ON t_search.id = ct_search.tutor_id
-      WHERE ct_search.course_id = c.id AND t_search.name LIKE ?
+      WHERE ct_search.course_id = c.id AND ${tutorSearchCondition.clause}
     ))`);
-    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    params.push(...courseSearchCondition.params, ...tutorSearchCondition.params);
   }
 
   if (department) {
@@ -454,7 +672,8 @@ const buildCourseFilters = ({ search, department }) => {
 
   return {
     whereClause: clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '',
-    params
+    params,
+    searchSpec
   };
 };
 
@@ -1369,14 +1588,27 @@ app.put('/api/me/favorite', requireStudent, async (req, res) => {
 app.get('/api/tutors', async (req, res) => {
   const viewer = decodeAuthCookie(req);
   const isStudent = viewer?.role === 'student';
-  const { whereClause, params } = buildTutorFilters(readDirectoryFilters(req.query));
+  const { whereClause, params, searchSpec } = buildTutorFilters(readDirectoryFilters(req.query));
   const pagination = readPagination(req.query);
   const sort = readDirectorySort(req.query);
   const paginationClause = pagination.isPaginated ? ' LIMIT ? OFFSET ?' : '';
   const paginationParams = pagination.isPaginated ? [pagination.limit, pagination.offset] : [];
   const needsReviewStats = sort !== 'alphabetical';
   const reviewStatsJoin = needsReviewStats ? buildReviewStatsJoin('tutor', 't') : '';
-  const orderClause = buildDirectoryOrderClause(sort, 't', 'name');
+  const searchRanking = buildSearchRanking({
+    searchSpec,
+    primaryField: 't.name',
+    prefixFields: ['t.department'],
+    allKeywordFields: ['t.name', 't.department', 't.bio'],
+    fieldPriorityGroups: [
+      ['t.name'],
+      ['t.department'],
+      ['t.bio']
+    ],
+    stableFields: ['t.name ASC', 't.id ASC']
+  });
+  const orderClause = buildDirectoryOrderClause(sort, 't', 'name', searchRanking);
+  const orderParams = searchRanking.params || [];
 
   let conn;
   try {
@@ -1404,7 +1636,7 @@ app.get('/api/tutors', async (req, res) => {
       ${orderClause}
       ${paginationClause}
       `;
-      rows = await conn.query(sql, [Number(viewer.id), ...params, ...paginationParams]);
+      rows = await conn.query(sql, [Number(viewer.id), ...params, ...orderParams, ...paginationParams]);
     } else if (needsReviewStats) {
       const sql = `
       SELECT
@@ -1420,13 +1652,15 @@ app.get('/api/tutors', async (req, res) => {
       ${orderClause}
       ${paginationClause}
       `;
-      const queryParams = [...params, ...paginationParams];
+      const queryParams = [...params, ...orderParams, ...paginationParams];
       rows = queryParams.length > 0
         ? await conn.query(sql, queryParams)
         : await conn.query(sql);
     } else {
-      const sql = `SELECT id, name, department, bio, created_at, updated_at FROM Tutors${whereClause} ORDER BY name ASC${paginationClause}`;
-      const queryParams = [...params, ...paginationParams];
+      const sql = searchSpec
+        ? `SELECT t.id, t.name, t.department, t.bio, t.created_at, t.updated_at FROM Tutors t${whereClause} ${orderClause}${paginationClause}`
+        : `SELECT id, name, department, bio, created_at, updated_at FROM Tutors${whereClause} ${orderClause.replaceAll('t.', '')}${paginationClause}`;
+      const queryParams = [...params, ...orderParams, ...paginationParams];
       rows = queryParams.length > 0
         ? await conn.query(sql, queryParams)
         : await conn.query(sql);
@@ -1599,14 +1833,29 @@ app.delete('/api/tutors/:id', requireAdmin, async (req, res) => {
 app.get('/api/courses', async (req, res) => {
   const viewer = decodeAuthCookie(req);
   const isStudent = viewer?.role === 'student';
-  const { whereClause, params } = buildCourseFilters(readDirectoryFilters(req.query));
+  const { whereClause, params, searchSpec } = buildCourseFilters(readDirectoryFilters(req.query));
   const pagination = readPagination(req.query);
   const sort = readDirectorySort(req.query);
   const paginationClause = pagination.isPaginated ? ' LIMIT ? OFFSET ?' : '';
   const paginationParams = pagination.isPaginated ? [pagination.limit, pagination.offset] : [];
   const needsReviewStats = sort !== 'alphabetical';
   const reviewStatsJoin = needsReviewStats ? buildReviewStatsJoin('course', 'c') : '';
-  const orderClause = buildDirectoryOrderClause(sort, 'c', 'title');
+  const searchRanking = buildSearchRanking({
+    searchSpec,
+    primaryField: 'c.title',
+    codeField: 'SUBSTRING_INDEX(c.title, " ", 1)',
+    prefixFields: ['c.department'],
+    allKeywordFields: ['c.title', 'c.department', 'c.description'],
+    fieldPriorityGroups: [
+      ['c.title'],
+      ['c.department'],
+      ['c.description'],
+      ['tutor_names']
+    ],
+    stableFields: ['c.title ASC', 'c.id ASC']
+  });
+  const orderClause = buildDirectoryOrderClause(sort, 'c', 'title', searchRanking);
+  const orderParams = searchRanking.params || [];
   const reviewStatsGroupFields = needsReviewStats
     ? ', review_stats.average_rating, review_stats.review_count, review_stats.latest_review_at'
     : '';
@@ -1642,7 +1891,7 @@ app.get('/api/courses', async (req, res) => {
       ${orderClause}
       ${paginationClause}
     `;
-      rows = await conn.query(sql, [Number(viewer.id), ...params, ...paginationParams]);
+      rows = await conn.query(sql, [Number(viewer.id), ...params, ...orderParams, ...paginationParams]);
     } else {
       const sql = `
       SELECT
@@ -1663,7 +1912,7 @@ app.get('/api/courses', async (req, res) => {
       ${orderClause}
       ${paginationClause}
     `;
-      const queryParams = [...params, ...paginationParams];
+      const queryParams = [...params, ...orderParams, ...paginationParams];
       rows = queryParams.length > 0
         ? await conn.query(sql, queryParams)
         : await conn.query(sql);

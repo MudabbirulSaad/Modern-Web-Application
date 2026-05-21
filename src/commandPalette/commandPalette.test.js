@@ -226,6 +226,12 @@ describe('command palette behavior', () => {
       domain: 'tutors',
       filters: { search: 'algorithms' }
     })
+    expect(parseOfflineCommand('search professors for cyber security')).toMatchObject({
+      action: 'SEARCH',
+      route: '/tutors',
+      domain: 'tutors',
+      filters: { search: 'cyber security' }
+    })
   })
 
   it('returns inline NONE feedback for unsupported offline commands', async () => {
