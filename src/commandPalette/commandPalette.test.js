@@ -3,7 +3,11 @@ import { createPinia, setActivePinia } from 'pinia'
 import {
   createCommandPaletteController,
   createCommandPaletteShortcutHandler,
+  createGlobalPaletteSearch,
+  fetchGlobalPaletteSearch,
   executeSmartNavigationCommand,
+  executeGlobalPaletteResult,
+  executeGlobalPaletteViewAll,
   parseOfflineCommand,
   submitCommandPaletteIntent
 } from './commandPalette.js'
@@ -287,5 +291,179 @@ describe('command palette behavior', () => {
       feedback: 'Too many smart-navigation requests. Please wait and try again.'
     })
     expect(router.push).not.toHaveBeenCalled()
+  })
+
+  it('returns grouped course and tutor search results with highlighted matches', () => {
+    const results = createGlobalPaletteSearch({
+      intent: 'database',
+      courses: [
+        {
+          id: 7,
+          title: 'COS20031 Database Design',
+          department: 'Information Systems',
+          description: 'Model relational data.',
+          tutor_names: 'Prof Liam Patel'
+        },
+        {
+          id: 8,
+          title: 'COS10005 Web Development',
+          department: 'Computer Science',
+          description: 'Build accessible web applications.'
+        }
+      ],
+      tutors: [
+        {
+          id: 4,
+          name: 'Prof Liam Patel',
+          department: 'Information Systems',
+          bio: 'Teaches database design and enterprise systems.'
+        }
+      ]
+    })
+
+    expect(results.hasQuery).toBe(true)
+    expect(results.hasMatches).toBe(true)
+    expect(results.courses).toHaveLength(1)
+    expect(results.tutors).toHaveLength(1)
+    expect(results.courses[0]).toMatchObject({
+      id: 7,
+      kind: 'course',
+      title: 'COS20031 Database Design',
+      code: 'COS20031',
+      department: 'Information Systems'
+    })
+    expect(results.courses[0].highlights.title).toContainEqual({
+      text: 'Database',
+      match: true
+    })
+    expect(results.tutors[0].highlights.bio).toContainEqual({
+      text: 'database',
+      match: true
+    })
+  })
+
+  it('returns a clear no-match state for deterministic search misses', () => {
+    const results = createGlobalPaletteSearch({
+      intent: 'quantum',
+      courses: [{ id: 1, title: 'Database Design', department: 'Information Systems' }],
+      tutors: [{ id: 2, name: 'Maya Chen', department: 'Computer Science', bio: 'Frontend engineering.' }]
+    })
+
+    expect(results).toMatchObject({
+      query: 'quantum',
+      hasQuery: true,
+      hasMatches: false,
+      courses: [],
+      tutors: []
+    })
+  })
+
+  it('navigates result clicks to detail pages', async () => {
+    const router = { push: jest.fn(async () => {}) }
+
+    await executeGlobalPaletteResult({ kind: 'course', id: 7 }, router)
+    await executeGlobalPaletteResult({ kind: 'tutor', id: 4 }, router)
+
+    expect(router.push).toHaveBeenNthCalledWith(1, {
+      name: 'course-detail',
+      params: { id: 7 }
+    })
+    expect(router.push).toHaveBeenNthCalledWith(2, {
+      name: 'tutor-detail',
+      params: { id: 4 }
+    })
+  })
+
+  it('navigates view-all actions to URL-backed filtered lists', async () => {
+    const router = { push: jest.fn(async () => {}) }
+
+    await executeGlobalPaletteViewAll('courses', 'database', router)
+    await executeGlobalPaletteViewAll('tutors', 'Maya Chen', router)
+
+    expect(useCourseStore()).toMatchObject({
+      searchQuery: 'database',
+      sortOrder: 'best-match',
+      currentPage: 1
+    })
+    expect(useTutorStore()).toMatchObject({
+      searchQuery: 'Maya Chen',
+      sortOrder: 'best-match',
+      currentPage: 1
+    })
+    expect(router.push).toHaveBeenNthCalledWith(1, {
+      path: '/courses',
+      query: { search: 'database' }
+    })
+    expect(router.push).toHaveBeenNthCalledWith(2, {
+      path: '/tutors',
+      query: { search: 'Maya Chen' }
+    })
+  })
+
+  it('updates plain search results while typing without calling the provider', () => {
+    const apiRequest = jest.fn()
+    const router = { push: jest.fn(async () => {}) }
+    const controller = createCommandPaletteController({
+      apiRequest,
+      router,
+      isOnline: () => true,
+      getCourses: () => [{ id: 7, title: 'Database Design', department: 'Information Systems' }],
+      getTutors: () => [{ id: 4, name: 'Maya Chen', department: 'Computer Science', bio: 'Databases.' }]
+    })
+
+    controller.open()
+    controller.updateIntent('database')
+
+    expect(apiRequest).not.toHaveBeenCalled()
+    expect(controller.searchResults()).toMatchObject({
+      hasMatches: true,
+      courses: [expect.objectContaining({ id: 7 })],
+      tutors: [expect.objectContaining({ id: 4 })]
+    })
+  })
+
+  it('fetches palette search from directory APIs instead of populated Pinia maps or the Groq endpoint', async () => {
+    const apiRequest = jest.fn(async (url) => {
+      if (url.startsWith('/api/courses?')) {
+        return {
+          data: [{
+            id: 9,
+            title: 'COS20031 Database Design',
+            department: 'Information Systems',
+            description: 'Model data.'
+          }]
+        }
+      }
+
+      if (url.startsWith('/api/tutors?')) {
+        return {
+          data: [{
+            id: 3,
+            name: 'Liam Patel',
+            department: 'Information Systems',
+            bio: 'Database systems.'
+          }]
+        }
+      }
+
+      throw new Error('Unexpected request: ' + url)
+    })
+
+    const results = await fetchGlobalPaletteSearch({
+      intent: 'database',
+      apiRequest
+    })
+
+    expect(apiRequest).toHaveBeenCalledTimes(2)
+    expect(apiRequest.mock.calls[0][0]).toContain('/api/courses?')
+    expect(apiRequest.mock.calls[0][0]).toContain('search=database')
+    expect(apiRequest.mock.calls[0][0]).toContain('limit=4')
+    expect(apiRequest.mock.calls[1][0]).toContain('/api/tutors?')
+    expect(apiRequest.mock.calls.map(([url]) => url)).not.toContain('/api/smart-navigation')
+    expect(results).toMatchObject({
+      hasMatches: true,
+      courses: [expect.objectContaining({ id: 9 })],
+      tutors: [expect.objectContaining({ id: 3 })]
+    })
   })
 })

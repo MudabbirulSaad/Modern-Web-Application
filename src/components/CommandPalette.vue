@@ -1,12 +1,23 @@
 <script setup>
-import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { apiRequest } from '../api/client'
 import {
   createCommandPaletteShortcutHandler,
+  executeGlobalPaletteResult,
+  executeGlobalPaletteViewAll,
+  fetchGlobalPaletteSearch,
   submitCommandPaletteIntent
 } from '../commandPalette/commandPalette'
 import { useOnlineStore } from '../store/onlineStore'
+
+const createEmptySearchResults = (query = '') => ({
+  query,
+  hasQuery: Boolean(query),
+  hasMatches: false,
+  courses: [],
+  tutors: []
+})
 
 const router = useRouter()
 const onlineStore = useOnlineStore()
@@ -15,8 +26,21 @@ const isOpen = ref(false)
 const intent = ref('')
 const feedback = ref('')
 const submitting = ref(false)
+const searchResults = ref(createEmptySearchResults())
+const searchLoading = ref(false)
+const searchError = ref('')
+let searchTimeout = null
+let searchRequestId = 0
 
 const focusInput = () => nextTick(() => inputRef.value?.focus())
+
+const resetSearch = () => {
+  window.clearTimeout(searchTimeout)
+  searchRequestId += 1
+  searchResults.value = createEmptySearchResults()
+  searchLoading.value = false
+  searchError.value = ''
+}
 
 const openPalette = () => {
   isOpen.value = true
@@ -28,11 +52,74 @@ const closePalette = () => {
   intent.value = ''
   feedback.value = ''
   submitting.value = false
+  resetSearch()
 }
 
 const updateIntent = (event) => {
   intent.value = event.target.value
   feedback.value = ''
+}
+
+const loadSearchResults = async (query, requestId) => {
+  if (!query.trim()) {
+    searchResults.value = createEmptySearchResults()
+    searchLoading.value = false
+    searchError.value = ''
+    return
+  }
+
+  searchLoading.value = true
+  searchError.value = ''
+
+  try {
+    const nextResults = await fetchGlobalPaletteSearch({
+      intent: query,
+      apiRequest
+    })
+
+    if (requestId === searchRequestId) {
+      searchResults.value = nextResults
+      searchError.value = ''
+    }
+  } catch {
+    if (requestId === searchRequestId) {
+      searchResults.value = createEmptySearchResults(query.trim())
+      searchError.value = 'Search results are unavailable right now.'
+    }
+  } finally {
+    if (requestId === searchRequestId) {
+      searchLoading.value = false
+    }
+  }
+}
+
+watch(intent, (query) => {
+  window.clearTimeout(searchTimeout)
+  const requestId = searchRequestId + 1
+  searchRequestId = requestId
+
+  if (!query.trim()) {
+    searchResults.value = createEmptySearchResults()
+    searchLoading.value = false
+    searchError.value = ''
+    return
+  }
+
+  searchResults.value = createEmptySearchResults(query.trim())
+  searchLoading.value = true
+  searchTimeout = window.setTimeout(() => {
+    void loadSearchResults(query, requestId)
+  }, 120)
+})
+
+const navigateToResult = async (result) => {
+  await executeGlobalPaletteResult(result, router)
+  closePalette()
+}
+
+const viewAll = async (domain) => {
+  await executeGlobalPaletteViewAll(domain, searchResults.value.query, router)
+  closePalette()
 }
 
 const submit = async () => {
@@ -69,6 +156,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  window.clearTimeout(searchTimeout)
   window.removeEventListener('keydown', handleShortcut)
 })
 </script>
@@ -127,6 +215,136 @@ onUnmounted(() => {
           >
             {{ feedback }}
           </p>
+
+          <div
+            v-if="searchResults.hasQuery"
+            class="command-palette-results mt-3"
+            aria-live="polite"
+          >
+            <p v-if="searchLoading" class="alert alert-secondary mb-0" role="status">
+              Searching courses and tutors...
+            </p>
+
+            <p v-else-if="searchError" class="alert alert-warning mb-0" role="status">
+              {{ searchError }}
+            </p>
+
+            <div v-else-if="searchResults.hasMatches" class="d-grid gap-3">
+              <section
+                v-if="searchResults.courses.length"
+                aria-labelledby="command-palette-courses-heading"
+              >
+                <div class="d-flex justify-content-between align-items-center gap-3 mb-2">
+                  <h3 id="command-palette-courses-heading" class="command-palette-group-heading mb-0">
+                    Courses
+                  </h3>
+                  <button
+                    class="btn btn-link btn-sm p-0"
+                    type="button"
+                    @click="viewAll('courses')"
+                  >
+                    View all matching Courses
+                  </button>
+                </div>
+
+                <div class="list-group">
+                  <button
+                    v-for="course in searchResults.courses"
+                    :key="`course-${course.id}`"
+                    class="list-group-item list-group-item-action command-palette-result"
+                    type="button"
+                    @click="navigateToResult(course)"
+                  >
+                    <span class="command-palette-result-title">
+                      <span
+                        v-if="course.code && !course.title.startsWith(course.code)"
+                        class="command-palette-result-code"
+                      >
+                        <span
+                          v-for="(segment, index) in course.highlights.code"
+                          :key="`course-code-${course.id}-${index}`"
+                          :class="{ 'command-palette-highlight': segment.match }"
+                        >{{ segment.text }}</span>
+                      </span>
+                      <span
+                        v-for="(segment, index) in course.highlights.title"
+                        :key="`course-title-${course.id}-${index}`"
+                        :class="{ 'command-palette-highlight': segment.match }"
+                      >{{ segment.text }}</span>
+                    </span>
+                    <span class="small text-body-secondary">
+                      <span
+                        v-for="(segment, index) in course.highlights.department"
+                        :key="`course-department-${course.id}-${index}`"
+                        :class="{ 'command-palette-highlight': segment.match }"
+                      >{{ segment.text }}</span>
+                    </span>
+                    <span v-if="course.description" class="command-palette-result-copy">
+                      <span
+                        v-for="(segment, index) in course.highlights.description"
+                        :key="`course-description-${course.id}-${index}`"
+                        :class="{ 'command-palette-highlight': segment.match }"
+                      >{{ segment.text }}</span>
+                    </span>
+                  </button>
+                </div>
+              </section>
+
+              <section
+                v-if="searchResults.tutors.length"
+                aria-labelledby="command-palette-tutors-heading"
+              >
+                <div class="d-flex justify-content-between align-items-center gap-3 mb-2">
+                  <h3 id="command-palette-tutors-heading" class="command-palette-group-heading mb-0">
+                    Tutors
+                  </h3>
+                  <button
+                    class="btn btn-link btn-sm p-0"
+                    type="button"
+                    @click="viewAll('tutors')"
+                  >
+                    View all matching Tutors
+                  </button>
+                </div>
+
+                <div class="list-group">
+                  <button
+                    v-for="tutor in searchResults.tutors"
+                    :key="`tutor-${tutor.id}`"
+                    class="list-group-item list-group-item-action command-palette-result"
+                    type="button"
+                    @click="navigateToResult(tutor)"
+                  >
+                    <span class="command-palette-result-title">
+                      <span
+                        v-for="(segment, index) in tutor.highlights.name"
+                        :key="`tutor-name-${tutor.id}-${index}`"
+                        :class="{ 'command-palette-highlight': segment.match }"
+                      >{{ segment.text }}</span>
+                    </span>
+                    <span class="small text-body-secondary">
+                      <span
+                        v-for="(segment, index) in tutor.highlights.department"
+                        :key="`tutor-department-${tutor.id}-${index}`"
+                        :class="{ 'command-palette-highlight': segment.match }"
+                      >{{ segment.text }}</span>
+                    </span>
+                    <span v-if="tutor.bio" class="command-palette-result-copy">
+                      <span
+                        v-for="(segment, index) in tutor.highlights.bio"
+                        :key="`tutor-bio-${tutor.id}-${index}`"
+                        :class="{ 'command-palette-highlight': segment.match }"
+                      >{{ segment.text }}</span>
+                    </span>
+                  </button>
+                </div>
+              </section>
+            </div>
+
+            <p v-else class="alert alert-secondary mb-0" role="status">
+              No courses or tutors match "{{ searchResults.query }}".
+            </p>
+          </div>
         </form>
       </section>
     </div>
@@ -159,5 +377,51 @@ onUnmounted(() => {
 
 .command-palette .btn-directory-action {
   min-width: 5.5rem;
+}
+
+.command-palette-results {
+  max-height: min(26rem, 52vh);
+  overflow-y: auto;
+}
+
+.command-palette-group-heading {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+}
+
+.command-palette-result {
+  display: grid;
+  gap: 0.2rem;
+  text-align: left;
+}
+
+.command-palette-result-title {
+  font-weight: 700;
+  color: var(--bs-body-color);
+}
+
+.command-palette-result-code {
+  margin-right: 0.4rem;
+  color: var(--bs-secondary-color);
+  font-weight: 700;
+}
+
+.command-palette-result-copy {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--bs-secondary-color);
+  font-size: 0.9rem;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.command-palette-highlight {
+  border-radius: 0.25rem;
+  background-color: rgba(var(--bs-warning-rgb), 0.35);
+  color: var(--bs-body-color);
+  font-weight: 700;
 }
 </style>
