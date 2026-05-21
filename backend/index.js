@@ -75,6 +75,37 @@ const readTutorPayload = (body) => ({
   bio: String(body.bio || '').trim()
 });
 
+const normalizeTutorIdentity = (value) => String(value || '').trim().toLowerCase();
+
+const TUTOR_DUPLICATE_MESSAGE = 'A tutor with this name and department already exists';
+
+const isTutorDuplicateError = (err) => (
+  Number(err?.errno) === 1062
+  || err?.code === 'ER_DUP_ENTRY'
+  || String(err?.message || '').includes('uniq_tutors_normalized_identity')
+);
+
+const hasDuplicateTutor = async (conn, { name, department }, exceptTutorId = null) => {
+  const normalizedName = normalizeTutorIdentity(name);
+  const normalizedDepartment = normalizeTutorIdentity(department);
+
+  if (exceptTutorId === null) {
+    const rows = await conn.query(
+      'SELECT id FROM Tutors WHERE LOWER(TRIM(name)) = ? AND LOWER(TRIM(department)) = ? LIMIT 1',
+      [normalizedName, normalizedDepartment]
+    );
+
+    return rows.length > 0;
+  }
+
+  const rows = await conn.query(
+    'SELECT id FROM Tutors WHERE LOWER(TRIM(name)) = ? AND LOWER(TRIM(department)) = ? AND id <> ? LIMIT 1',
+    [normalizedName, normalizedDepartment, exceptTutorId]
+  );
+
+  return rows.length > 0;
+};
+
 const readCoursePayload = (body) => ({
   title: String(body.title || '').trim(),
   department: String(body.department || '').trim(),
@@ -1087,6 +1118,13 @@ app.post('/api/tutors', requireAdmin, async (req, res) => {
   let conn;
   try {
     conn = await pool.getConnection();
+    const isDuplicate = await hasDuplicateTutor(conn, { name, department });
+
+    if (isDuplicate) {
+      res.status(400).json({ status: 'error', message: TUTOR_DUPLICATE_MESSAGE });
+      return;
+    }
+
     const result = await conn.query(
       'INSERT INTO Tutors (name, department, bio) VALUES (?, ?, ?)',
       [name, department, bio]
@@ -1098,6 +1136,11 @@ app.post('/api/tutors', requireAdmin, async (req, res) => {
 
     res.status(201).json({ status: 'ok', data: rows[0] });
   } catch (err) {
+    if (isTutorDuplicateError(err)) {
+      res.status(400).json({ status: 'error', message: TUTOR_DUPLICATE_MESSAGE });
+      return;
+    }
+
     console.error('Tutor create error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to create tutor' });
   } finally {
@@ -1116,6 +1159,13 @@ app.put('/api/tutors/:id', requireAdmin, async (req, res) => {
   let conn;
   try {
     conn = await pool.getConnection();
+    const isDuplicate = await hasDuplicateTutor(conn, { name, department }, req.params.id);
+
+    if (isDuplicate) {
+      res.status(400).json({ status: 'error', message: TUTOR_DUPLICATE_MESSAGE });
+      return;
+    }
+
     const result = await conn.query(
       'UPDATE Tutors SET name = ?, department = ?, bio = ? WHERE id = ?',
       [name, department, bio, req.params.id]
@@ -1133,6 +1183,11 @@ app.put('/api/tutors/:id', requireAdmin, async (req, res) => {
 
     res.json({ status: 'ok', data: rows[0] });
   } catch (err) {
+    if (isTutorDuplicateError(err)) {
+      res.status(400).json({ status: 'error', message: TUTOR_DUPLICATE_MESSAGE });
+      return;
+    }
+
     console.error('Tutor update error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to update tutor' });
   } finally {

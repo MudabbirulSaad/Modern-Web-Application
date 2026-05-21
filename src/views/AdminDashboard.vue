@@ -11,6 +11,7 @@ const courseSaving = ref(false)
 const deletingTutorId = ref(null)
 const deletingCourseId = ref(null)
 const error = ref('')
+const tutorFormError = ref('')
 const success = ref('')
 const editingTutorId = ref(null)
 const editingCourseId = ref(null)
@@ -39,6 +40,7 @@ const resetTutorForm = () => {
   tutorForm.name = ''
   tutorForm.department = ''
   tutorForm.bio = ''
+  tutorFormError.value = ''
 }
 
 const resetCourseForm = () => {
@@ -117,6 +119,7 @@ const editTutor = (tutor) => {
   tutorForm.bio = tutor.bio
   success.value = ''
   error.value = ''
+  tutorFormError.value = ''
 }
 
 const editCourse = async (course) => {
@@ -145,10 +148,11 @@ const editCourse = async (course) => {
 
 const saveTutor = async () => {
   error.value = ''
+  tutorFormError.value = ''
   success.value = ''
 
   if (!tutorForm.name.trim() || !tutorForm.department.trim() || !tutorForm.bio.trim()) {
-    error.value = 'Name, department, and bio are required.'
+    tutorFormError.value = 'Name, department, and bio are required.'
     return
   }
 
@@ -176,7 +180,7 @@ const saveTutor = async () => {
     resetTutorForm()
     await Promise.all([loadTutors(), loadCourses()])
   } catch (err) {
-    error.value = err.message || 'Unable to save tutor.'
+    tutorFormError.value = err.message || 'Unable to save tutor.'
   } finally {
     tutorSaving.value = false
   }
@@ -228,6 +232,7 @@ const deleteTutor = async (tutor) => {
   }
 
   error.value = ''
+  tutorFormError.value = ''
   success.value = ''
   deletingTutorId.value = tutor.id
 
@@ -503,6 +508,10 @@ onMounted(() => {
               </template>
 
               <form @submit.prevent="saveTutor">
+                <div v-if="tutorFormError" class="alert alert-danger" role="alert">
+                  {{ tutorFormError }}
+                </div>
+
                 <div class="mb-3">
                   <label class="form-label" for="tutor-name">Name</label>
                   <input

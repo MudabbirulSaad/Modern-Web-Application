@@ -287,6 +287,7 @@ describe('Protected tutor management endpoints', () => {
     };
     const mockConn = {
       query: jest.fn()
+        .mockResolvedValueOnce([])
         .mockResolvedValueOnce({ insertId: 4 })
         .mockResolvedValueOnce([createdTutor]),
       release: jest.fn()
@@ -306,13 +307,46 @@ describe('Protected tutor management endpoints', () => {
     expect(res.body).toEqual({ status: 'ok', data: createdTutor });
     expect(mockConn.query).toHaveBeenNthCalledWith(
       1,
+      'SELECT id FROM Tutors WHERE LOWER(TRIM(name)) = ? AND LOWER(TRIM(department)) = ? LIMIT 1',
+      ['dr nora banks', 'computer science']
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
       'INSERT INTO Tutors (name, department, bio) VALUES (?, ?, ?)',
       ['Dr Nora Banks', 'Computer Science', 'Teaches client-side engineering and accessibility.']
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(
-      2,
+      3,
       'SELECT id, name, department, bio, created_at, updated_at FROM Tutors WHERE id = ? LIMIT 1',
       [4]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should reject duplicate tutor creation by normalized name and department', async () => {
+    const mockConn = {
+      query: jest.fn().mockResolvedValue([{ id: 1 }]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/tutors')
+      .set('Cookie', adminCookie())
+      .send({
+        name: '  DR NORA BANKS  ',
+        department: ' computer science ',
+        bio: 'Different bio.'
+      });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'A tutor with this name and department already exists' });
+    expect(mockConn.query).toHaveBeenCalledTimes(1);
+    expect(mockConn.query).toHaveBeenCalledWith(
+      'SELECT id FROM Tutors WHERE LOWER(TRIM(name)) = ? AND LOWER(TRIM(department)) = ? LIMIT 1',
+      ['dr nora banks', 'computer science']
     );
     expect(mockConn.release).toHaveBeenCalled();
 
@@ -353,6 +387,7 @@ describe('Protected tutor management endpoints', () => {
     };
     const mockConn = {
       query: jest.fn()
+        .mockResolvedValueOnce([])
         .mockResolvedValueOnce({ affectedRows: 1 })
         .mockResolvedValueOnce([updatedTutor]),
       release: jest.fn()
@@ -372,6 +407,11 @@ describe('Protected tutor management endpoints', () => {
     expect(res.body).toEqual({ status: 'ok', data: updatedTutor });
     expect(mockConn.query).toHaveBeenNthCalledWith(
       1,
+      'SELECT id FROM Tutors WHERE LOWER(TRIM(name)) = ? AND LOWER(TRIM(department)) = ? AND id <> ? LIMIT 1',
+      ['dr nora banks', 'software engineering', '4']
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
       'UPDATE Tutors SET name = ?, department = ?, bio = ? WHERE id = ?',
       ['Dr Nora Banks', 'Software Engineering', 'Leads frontend architecture and accessibility studios.', '4']
     );
@@ -380,9 +420,39 @@ describe('Protected tutor management endpoints', () => {
     spy.mockRestore();
   });
 
+  it('should reject tutor updates that collide with another normalized tutor', async () => {
+    const mockConn = {
+      query: jest.fn().mockResolvedValue([{ id: 1 }]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/tutors/4')
+      .set('Cookie', adminCookie())
+      .send({
+        name: 'DR NORA BANKS',
+        department: ' software engineering ',
+        bio: 'Updated bio.'
+      });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'A tutor with this name and department already exists' });
+    expect(mockConn.query).toHaveBeenCalledTimes(1);
+    expect(mockConn.query).toHaveBeenCalledWith(
+      'SELECT id FROM Tutors WHERE LOWER(TRIM(name)) = ? AND LOWER(TRIM(department)) = ? AND id <> ? LIMIT 1',
+      ['dr nora banks', 'software engineering', '4']
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
   it('should return 404 when updating a missing tutor', async () => {
     const mockConn = {
-      query: jest.fn().mockResolvedValue({ affectedRows: 0 }),
+      query: jest.fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce({ affectedRows: 0 }),
       release: jest.fn()
     };
     const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
