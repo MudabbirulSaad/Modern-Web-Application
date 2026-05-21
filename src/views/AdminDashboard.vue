@@ -1,6 +1,13 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import BaseCard from '../components/common/BaseCard.vue'
+import {
+  addTutorAssignment,
+  countTutorAssignmentMatches,
+  findSelectedTutors,
+  findTutorAssignmentResults,
+  removeTutorAssignment
+} from './adminTutorAssignment.js'
 
 const tutors = ref([])
 const courses = ref([])
@@ -17,6 +24,8 @@ const success = ref('')
 const editingTutorId = ref(null)
 const editingCourseId = ref(null)
 const activeAdminTab = ref('courses')
+const tutorSearch = ref('')
+const TUTOR_SEARCH_RESULT_LIMIT = 8
 
 const tutorForm = reactive({
   name: '',
@@ -35,6 +44,23 @@ const isEditingTutor = computed(() => editingTutorId.value !== null)
 const isEditingCourse = computed(() => editingCourseId.value !== null)
 const hasTutors = computed(() => tutors.value.length > 0)
 const hasCourses = computed(() => courses.value.length > 0)
+const selectedCourseTutors = computed(() => findSelectedTutors(tutors.value, courseForm.tutorIds))
+const tutorSearchTerm = computed(() => tutorSearch.value.trim())
+const hasTutorSearch = computed(() => tutorSearchTerm.value.length > 0)
+const availableCourseTutors = computed(() => (
+  findTutorAssignmentResults(
+    tutors.value,
+    courseForm.tutorIds,
+    tutorSearch.value,
+    TUTOR_SEARCH_RESULT_LIMIT
+  )
+))
+const tutorSearchResultCount = computed(() => (
+  countTutorAssignmentMatches(tutors.value, courseForm.tutorIds, tutorSearch.value)
+))
+const hiddenTutorResultCount = computed(() => (
+  Math.max(tutorSearchResultCount.value - availableCourseTutors.value.length, 0)
+))
 
 const resetTutorForm = () => {
   editingTutorId.value = null
@@ -50,6 +76,7 @@ const resetCourseForm = () => {
   courseForm.department = ''
   courseForm.description = ''
   courseForm.tutorIds = []
+  tutorSearch.value = ''
   courseFormError.value = ''
 }
 
@@ -131,6 +158,7 @@ const editCourse = async (course) => {
   courseForm.department = course.department
   courseForm.description = course.description
   courseForm.tutorIds = readCourseTutorIds(course)
+  tutorSearch.value = ''
   success.value = ''
   error.value = ''
   courseFormError.value = ''
@@ -147,6 +175,14 @@ const editCourse = async (course) => {
   } catch (err) {
     courseForm.tutorIds = readCourseTutorIds(course)
   }
+}
+
+const addCourseTutor = (tutor) => {
+  courseForm.tutorIds = addTutorAssignment(courseForm.tutorIds, tutor.id)
+}
+
+const removeCourseTutor = (tutor) => {
+  courseForm.tutorIds = removeTutorAssignment(courseForm.tutorIds, tutor.id)
 }
 
 const saveTutor = async () => {
@@ -401,22 +437,89 @@ onMounted(() => {
 
                 <fieldset class="mb-4">
                   <legend class="form-label">Assigned tutors</legend>
-                  <div v-if="!hasTutors" class="alert alert-secondary mb-0" role="status">
+
+                  <div v-if="selectedCourseTutors.length > 0" class="selected-tutor-list mb-3" aria-label="Selected tutors">
+                    <span
+                      v-for="tutor in selectedCourseTutors"
+                      :key="tutor.id"
+                      class="selected-tutor-chip"
+                    >
+                      <span>
+                        <strong>{{ tutor.name }}</strong>
+                        <span class="text-body-secondary"> {{ tutor.department }}</span>
+                      </span>
+                      <button
+                        class="selected-tutor-remove"
+                        type="button"
+                        :aria-label="`Remove ${tutor.name}`"
+                        @click="removeCourseTutor(tutor)"
+                      >
+                        &times;
+                      </button>
+                    </span>
+                  </div>
+                  <div v-else class="assignment-empty mb-3" role="status">
+                    No tutors selected.
+                  </div>
+
+                  <div v-if="loadingTutors" class="placeholder-glow" aria-label="Loading tutor assignment options">
+                    <span class="placeholder col-12 mb-2"></span>
+                    <span class="placeholder col-10"></span>
+                  </div>
+                  <div v-else-if="!hasTutors" class="alert alert-secondary mb-0" role="status">
                     Create tutors before assigning them to courses.
                   </div>
-                  <div v-else class="vstack gap-2">
-                    <div v-for="tutor in tutors" :key="tutor.id" class="form-check">
-                      <input
-                        :id="`course-tutor-${tutor.id}`"
-                        v-model="courseForm.tutorIds"
-                        class="form-check-input"
-                        type="checkbox"
-                        :value="tutor.id"
-                      >
-                      <label class="form-check-label" :for="`course-tutor-${tutor.id}`">
-                        {{ tutor.name }} <span class="text-body-secondary">({{ tutor.department }})</span>
-                      </label>
+                  <div v-else class="course-tutor-assignment">
+                    <label class="form-label small text-body-secondary" for="course-tutor-search">
+                      Search by tutor name or department
+                    </label>
+                    <input
+                      id="course-tutor-search"
+                      v-model="tutorSearch"
+                      class="form-control"
+                      type="search"
+                      autocomplete="off"
+                      placeholder="Start typing to find tutors"
+                    >
+
+                    <div v-if="!hasTutorSearch" class="assignment-empty mt-3" role="status">
+                      Search available tutors to add them to this course.
                     </div>
+                    <div v-else-if="availableCourseTutors.length === 0" class="assignment-empty mt-3" role="status">
+                      No available tutors match "{{ tutorSearchTerm }}".
+                    </div>
+                    <div v-else class="tutor-search-results mt-3">
+                      <div
+                        v-for="tutor in availableCourseTutors"
+                        :key="tutor.id"
+                        class="tutor-search-result"
+                      >
+                        <div class="min-w-0">
+                          <p class="fw-bold mb-1 text-truncate">{{ tutor.name }}</p>
+                          <p class="small text-body-secondary mb-0 text-truncate">{{ tutor.department }}</p>
+                        </div>
+                        <button
+                          class="btn btn-directory-action-secondary btn-sm"
+                          type="button"
+                          @click="addCourseTutor(tutor)"
+                        >
+                          Add
+                        </button>
+                      </div>
+                      <p v-if="hiddenTutorResultCount > 0" class="small text-body-secondary mb-0 mt-2">
+                        Showing {{ availableCourseTutors.length }} of {{ tutorSearchResultCount }} matches. Refine the search to narrow the list.
+                      </p>
+                    </div>
+                    <p v-if="selectedCourseTutors.length > 0" class="small text-body-secondary mb-0 mt-2">
+                      {{ selectedCourseTutors.length }} tutor{{ selectedCourseTutors.length === 1 ? '' : 's' }} selected.
+                    </p>
+                    <input
+                      v-for="tutorId in courseForm.tutorIds"
+                      :key="`selected-course-tutor-${tutorId}`"
+                      type="hidden"
+                      name="tutorIds"
+                      :value="tutorId"
+                    >
                   </div>
                 </fieldset>
 
@@ -647,6 +750,92 @@ onMounted(() => {
   max-width: 34rem;
 }
 
+.course-tutor-assignment {
+  min-width: 0;
+}
+
+.selected-tutor-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.selected-tutor-chip {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.45rem 0.35rem 0.75rem;
+  border: 1px solid rgba(var(--swinburne-punch-rgb), 0.18);
+  border-radius: 999px;
+  background: rgba(var(--swinburne-punch-rgb), 0.08);
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+.selected-tutor-chip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-tutor-remove {
+  display: inline-flex;
+  width: 1.65rem;
+  height: 1.65rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--swinburne-punch);
+  background: var(--bs-body-bg);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.selected-tutor-remove:hover {
+  color: var(--swinburne-white);
+  background: var(--swinburne-punch);
+}
+
+.selected-tutor-remove:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 0.2rem var(--swinburne-focus-ring);
+}
+
+.assignment-empty {
+  padding: 0.85rem;
+  border: 1px dashed var(--bs-border-color);
+  border-radius: 0.5rem;
+  color: var(--bs-secondary-color);
+  background: var(--bs-tertiary-bg);
+}
+
+.tutor-search-results {
+  display: grid;
+  gap: 0.5rem;
+  max-height: 21rem;
+  overflow-y: auto;
+}
+
+.tutor-search-result {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.5rem;
+  background: var(--bs-body-bg);
+}
+
+.min-w-0 {
+  min-width: 0;
+}
+
 .admin-tabs {
   display: inline-flex;
   gap: 0.35rem;
@@ -686,5 +875,9 @@ onMounted(() => {
 [data-bs-theme="dark"] .admin-tabs {
   background: var(--bs-surface-color);
   border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-bs-theme="dark"] .selected-tutor-remove {
+  background: var(--bs-surface-color);
 }
 </style>
