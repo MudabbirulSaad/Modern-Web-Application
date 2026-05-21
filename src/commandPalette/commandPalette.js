@@ -1,3 +1,4 @@
+import { NavigationFailureType, isNavigationFailure } from 'vue-router'
 import {
   COURSE_PAGE_LIMIT,
   COURSE_SORT_OPTIONS,
@@ -241,7 +242,15 @@ export const executeSmartNavigationCommand = async (command, router) => {
     applyDirectoryFilters(safeCommand)
   }
 
-  await router.push({ path: safeCommand.route })
+  const failure = await router.push({ path: safeCommand.route })
+
+  if (isNavigationFailure(failure, NavigationFailureType.aborted) ||
+      isNavigationFailure(failure, NavigationFailureType.cancelled)) {
+    return {
+      executed: false,
+      feedback: 'Navigation was blocked. You may not have access to that page.'
+    }
+  }
 
   return { executed: true }
 }

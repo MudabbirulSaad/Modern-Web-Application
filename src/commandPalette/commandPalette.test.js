@@ -198,6 +198,22 @@ describe('command palette behavior', () => {
     expect(router.push).not.toHaveBeenCalled()
   })
 
+  it('returns executed true when router.push resolves successfully (undefined = no failure)', async () => {
+    const router = { push: jest.fn(async () => undefined) }
+
+    const result = await executeSmartNavigationCommand({
+      action: 'NAVIGATE',
+      route: '/courses',
+      domain: 'courses',
+      filters: {},
+      confidence: 1,
+      reason: 'Navigate to courses'
+    }, router)
+
+    expect(result).toEqual({ executed: true })
+    expect(router.push).toHaveBeenCalledWith({ path: '/courses' })
+  })
+
   it('parses simple offline route and search commands', () => {
     expect(parseOfflineCommand('Courses')).toMatchObject({
       action: 'NAVIGATE',
