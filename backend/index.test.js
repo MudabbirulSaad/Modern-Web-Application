@@ -1,5 +1,5 @@
 import request from 'supertest';
-import app from './index';
+import app from './app.js';
 import pool from './db';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
