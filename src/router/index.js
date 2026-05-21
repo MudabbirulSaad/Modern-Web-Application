@@ -39,12 +39,18 @@ const routes = [
   {
     path: '/register',
     name: 'register',
-    component: Register
+    component: Register,
+    meta: {
+      requiresGuest: true
+    }
   },
   {
     path: '/login',
     name: 'login',
-    component: Login
+    component: Login,
+    meta: {
+      requiresGuest: true
+    }
   },
   {
     path: '/dashboard',

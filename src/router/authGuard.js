@@ -1,7 +1,7 @@
 import { useUserStore } from '../store/userStore'
 
 export const createAuthGuard = (resolveUserStore = useUserStore) => async (to) => {
-  if (!to.meta.requiresAdmin && !to.meta.requiresStudent) {
+  if (!to.meta.requiresAdmin && !to.meta.requiresStudent && !to.meta.requiresGuest) {
     return true
   }
 
@@ -9,6 +9,18 @@ export const createAuthGuard = (resolveUserStore = useUserStore) => async (to) =
 
   if (!userStore.sessionInitialized) {
     await userStore.initializeSession()
+  }
+
+  if (to.meta.requiresGuest) {
+    if (userStore.isAdmin) {
+      return { name: 'admin-dashboard' }
+    }
+
+    if (userStore.isStudent) {
+      return { name: 'student-dashboard' }
+    }
+
+    return true
   }
 
   if (!userStore.isAuthenticated) {
