@@ -55,6 +55,41 @@ beforeEach(async () => {
 })
 
 describe('course store cache-first loading', () => {
+  it.each([
+    'cyber security',
+    'cyber-security',
+    'IT security'
+  ])('loads regular course search for %s through the deterministic directory API only', async (searchQuery) => {
+    global.fetch.mockResolvedValue(okCoursesResponse({
+      data: [{
+        id: 15,
+        title: 'COS30015 IT Security',
+        department: 'Computing Technologies',
+        description: 'Security principles for connected systems.',
+        has_favorite: false
+      }],
+      total: 1
+    }))
+
+    const store = useCourseStore()
+    store.searchQuery = searchQuery
+
+    await store.loadCourses()
+
+    expect(store.courses).toEqual([
+      expect.objectContaining({ id: 15, title: 'COS30015 IT Security' })
+    ])
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+    const requestUrl = global.fetch.mock.calls[0][0]
+    const requestParams = new URLSearchParams(requestUrl.split('?')[1])
+    expect(requestUrl).toContain('/api/courses?')
+    expect(requestParams.get('search')).toBe(searchQuery)
+    expect(requestParams.get('sort')).toBe('best-match')
+    expect(requestParams.get('page')).toBe('1')
+    expect(requestParams.get('limit')).toBe('6')
+    expect(global.fetch.mock.calls.map(([url]) => url)).not.toContain('/api/smart-navigation')
+  })
+
   it('hydrates cached course query results immediately before online refresh completes', async () => {
     await saveDirectoryQuery({
       viewerScope: GUEST_VIEWER_SCOPE,

@@ -359,6 +359,40 @@ describe('command palette behavior', () => {
     })
   })
 
+  it.each([
+    ['cyber security', 'ICT300 Cybersecurity'],
+    ['cyber-security', 'ICT300 Cybersecurity'],
+    ['IT security', 'COS30015 IT Security']
+  ])('discovers security results from plain palette search for %s', (intent, courseTitle) => {
+    const results = createGlobalPaletteSearch({
+      intent,
+      courses: [
+        {
+          id: 15,
+          title: courseTitle,
+          department: 'Information Technology',
+          description: 'Security principles for connected systems.',
+          tutor_names: 'Cybersecurity Tutor'
+        }
+      ],
+      tutors: [
+        {
+          id: 8,
+          name: 'Cybersecurity Tutor',
+          department: 'Information Technology',
+          bio: 'Lecturer for IT security and secure systems.'
+        }
+      ]
+    })
+
+    expect(results).toMatchObject({
+      hasQuery: true,
+      hasMatches: true,
+      courses: [expect.objectContaining({ id: 15, kind: 'course' })],
+      tutors: [expect.objectContaining({ id: 8, kind: 'tutor' })]
+    })
+  })
+
   it('navigates result clicks to detail pages', async () => {
     const router = { push: jest.fn(async () => {}) }
 
@@ -554,6 +588,37 @@ describe('command palette behavior', () => {
     expect(router.push).toHaveBeenNthCalledWith(2, {
       path: '/tutors',
       query: { search: 'Chen' }
+    })
+    expect(apiRequest.mock.calls.map(([url]) => url)).not.toContain('/api/smart-navigation')
+  })
+
+  it.each([
+    ['/navigate show me cyber security courses', 'cyber security'],
+    ['/navigate show me cyber-security courses', 'cyber-security'],
+    ['/navigate show me IT security tutors', 'IT security']
+  ])('keeps relevant slash-command security discovery deterministic for %s', async (intent, expectedSearch) => {
+    const apiRequest = jest.fn(async (url) => {
+      if (url.startsWith('/api/courses?') || url.startsWith('/api/tutors?')) {
+        return { data: [] }
+      }
+
+      throw new Error('Unexpected request: ' + url)
+    })
+    const router = { push: jest.fn(async () => {}) }
+
+    await submitCommandPaletteIntent({
+      intent,
+      apiRequest,
+      router,
+      online: true
+    })
+
+    const expectedDomain = intent.includes('tutors') ? 'tutors' : 'courses'
+    const expectedPath = expectedDomain === 'courses' ? '/courses' : '/tutors'
+
+    expect(router.push).toHaveBeenCalledWith({
+      path: expectedPath,
+      query: { search: expectedSearch }
     })
     expect(apiRequest.mock.calls.map(([url]) => url)).not.toContain('/api/smart-navigation')
   })

@@ -55,6 +55,41 @@ beforeEach(async () => {
 })
 
 describe('tutor store cache-first loading', () => {
+  it.each([
+    'cyber security',
+    'cyber-security',
+    'IT security'
+  ])('loads regular tutor search for %s through the deterministic directory API only', async (searchQuery) => {
+    global.fetch.mockResolvedValue(okTutorsResponse({
+      data: [{
+        id: 8,
+        name: 'Cybersecurity Tutor',
+        department: 'Information Technology',
+        bio: 'Lecturer for IT security and secure systems.',
+        has_favorite: false
+      }],
+      total: 1
+    }))
+
+    const store = useTutorStore()
+    store.searchQuery = searchQuery
+
+    await store.loadTutors()
+
+    expect(store.tutors).toEqual([
+      expect.objectContaining({ id: 8, name: 'Cybersecurity Tutor' })
+    ])
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+    const requestUrl = global.fetch.mock.calls[0][0]
+    const requestParams = new URLSearchParams(requestUrl.split('?')[1])
+    expect(requestUrl).toContain('/api/tutors?')
+    expect(requestParams.get('search')).toBe(searchQuery)
+    expect(requestParams.get('sort')).toBe('best-match')
+    expect(requestParams.get('page')).toBe('1')
+    expect(requestParams.get('limit')).toBe('6')
+    expect(global.fetch.mock.calls.map(([url]) => url)).not.toContain('/api/smart-navigation')
+  })
+
   it('hydrates cached tutor query results immediately before online refresh completes', async () => {
     await saveDirectoryQuery({
       viewerScope: GUEST_VIEWER_SCOPE,
