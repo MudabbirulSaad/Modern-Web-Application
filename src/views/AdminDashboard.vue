@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useAdminManagement } from '../admin/useAdminManagement.js'
 import BaseCard from '../components/common/BaseCard.vue'
 import {
   addTutorAssignment,
@@ -9,36 +10,38 @@ import {
   removeTutorAssignment
 } from './adminTutorAssignment.js'
 
-const tutors = ref([])
-const courses = ref([])
-const loadingTutors = ref(true)
-const loadingCourses = ref(true)
-const tutorSaving = ref(false)
-const courseSaving = ref(false)
-const deletingTutorId = ref(null)
-const deletingCourseId = ref(null)
-const error = ref('')
-const tutorFormError = ref('')
-const courseFormError = ref('')
-const success = ref('')
-const editingTutorId = ref(null)
-const editingCourseId = ref(null)
 const activeAdminTab = ref('courses')
 const tutorSearch = ref('')
 const TUTOR_SEARCH_RESULT_LIMIT = 8
 
-const tutorForm = reactive({
-  name: '',
-  department: '',
-  bio: ''
-})
-
-const courseForm = reactive({
-  title: '',
-  department: '',
-  description: '',
-  tutorIds: []
-})
+const {
+  tutors,
+  courses,
+  loadingTutors,
+  loadingCourses,
+  tutorForm,
+  courseForm,
+  tutorSaving,
+  courseSaving,
+  deletingTutorId,
+  deletingCourseId,
+  tutorFormError,
+  courseFormError,
+  error,
+  success,
+  editingTutorId,
+  editingCourseId,
+  editTutor: startTutorEdit,
+  editCourse: startCourseEdit,
+  resetTutorForm,
+  resetCourseForm: resetManagementCourseForm,
+  saveTutor,
+  saveCourse: saveManagementCourse,
+  deleteTutor,
+  deleteCourse,
+  loadTutors,
+  loadCourses
+} = useAdminManagement({})
 
 const isEditingTutor = computed(() => editingTutorId.value !== null)
 const isEditingCourse = computed(() => editingCourseId.value !== null)
@@ -62,119 +65,28 @@ const hiddenTutorResultCount = computed(() => (
   Math.max(tutorSearchResultCount.value - availableCourseTutors.value.length, 0)
 ))
 
-const resetTutorForm = () => {
-  editingTutorId.value = null
-  tutorForm.name = ''
-  tutorForm.department = ''
-  tutorForm.bio = ''
-  tutorFormError.value = ''
-}
-
 const resetCourseForm = () => {
-  editingCourseId.value = null
-  courseForm.title = ''
-  courseForm.department = ''
-  courseForm.description = ''
-  courseForm.tutorIds = []
+  resetManagementCourseForm()
   tutorSearch.value = ''
-  courseFormError.value = ''
 }
 
-const readError = async (response, fallback) => {
-  try {
-    const payload = await response.json()
-    return payload.message || fallback
-  } catch (err) {
-    return fallback
-  }
-}
+const saveCourse = async () => {
+  const saved = await saveManagementCourse()
 
-const readCourseTutorIds = (course) => {
-  if (Array.isArray(course.tutors)) {
-    return course.tutors.map((tutor) => Number(tutor.id))
-  }
-
-  return String(course.tutor_ids || '')
-    .split(',')
-    .map((id) => Number(id))
-    .filter((id) => Number.isInteger(id) && id > 0)
-}
-
-const loadTutors = async () => {
-  loadingTutors.value = true
-  error.value = ''
-
-  try {
-    const response = await fetch('/api/tutors')
-
-    if (!response.ok) {
-      throw new Error('Unable to load tutors')
-    }
-
-    const payload = await response.json()
-    tutors.value = payload.data || []
-  } catch (err) {
-    error.value = 'Tutors are unavailable right now. Please try again shortly.'
-  } finally {
-    loadingTutors.value = false
-  }
-}
-
-const loadCourses = async () => {
-  loadingCourses.value = true
-  error.value = ''
-
-  try {
-    const response = await fetch('/api/courses')
-
-    if (!response.ok) {
-      throw new Error('Unable to load courses')
-    }
-
-    const payload = await response.json()
-    courses.value = payload.data || []
-  } catch (err) {
-    error.value = 'Courses are unavailable right now. Please try again shortly.'
-  } finally {
-    loadingCourses.value = false
+  if (saved) {
+    tutorSearch.value = ''
   }
 }
 
 const editTutor = (tutor) => {
   activeAdminTab.value = 'tutors'
-  editingTutorId.value = tutor.id
-  tutorForm.name = tutor.name
-  tutorForm.department = tutor.department
-  tutorForm.bio = tutor.bio
-  success.value = ''
-  error.value = ''
-  tutorFormError.value = ''
+  startTutorEdit(tutor)
 }
 
 const editCourse = async (course) => {
   activeAdminTab.value = 'courses'
-  editingCourseId.value = course.id
-  courseForm.title = course.title
-  courseForm.department = course.department
-  courseForm.description = course.description
-  courseForm.tutorIds = readCourseTutorIds(course)
   tutorSearch.value = ''
-  success.value = ''
-  error.value = ''
-  courseFormError.value = ''
-
-  try {
-    const response = await fetch(`/api/courses/${course.id}`)
-
-    if (!response.ok) {
-      return
-    }
-
-    const payload = await response.json()
-    courseForm.tutorIds = readCourseTutorIds(payload.data || course)
-  } catch (err) {
-    courseForm.tutorIds = readCourseTutorIds(course)
-  }
+  await startCourseEdit(course)
 }
 
 const addCourseTutor = (tutor) => {
@@ -183,152 +95,6 @@ const addCourseTutor = (tutor) => {
 
 const removeCourseTutor = (tutor) => {
   courseForm.tutorIds = removeTutorAssignment(courseForm.tutorIds, tutor.id)
-}
-
-const saveTutor = async () => {
-  error.value = ''
-  tutorFormError.value = ''
-  success.value = ''
-
-  if (!tutorForm.name.trim() || !tutorForm.department.trim() || !tutorForm.bio.trim()) {
-    tutorFormError.value = 'Name, department, and bio are required.'
-    return
-  }
-
-  tutorSaving.value = true
-
-  try {
-    const response = await fetch(isEditingTutor.value ? `/api/tutors/${editingTutorId.value}` : '/api/tutors', {
-      method: isEditingTutor.value ? 'PUT' : 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        name: tutorForm.name,
-        department: tutorForm.department,
-        bio: tutorForm.bio
-      })
-    })
-
-    if (!response.ok) {
-      throw new Error(await readError(response, 'Unable to save tutor'))
-    }
-
-    success.value = isEditingTutor.value ? 'Tutor updated.' : 'Tutor created.'
-    resetTutorForm()
-    await Promise.all([loadTutors(), loadCourses()])
-  } catch (err) {
-    tutorFormError.value = err.message || 'Unable to save tutor.'
-  } finally {
-    tutorSaving.value = false
-  }
-}
-
-const saveCourse = async () => {
-  error.value = ''
-  courseFormError.value = ''
-  success.value = ''
-
-  if (!courseForm.title.trim() || !courseForm.department.trim() || !courseForm.description.trim()) {
-    courseFormError.value = 'Title, department, and description are required.'
-    return
-  }
-
-  courseSaving.value = true
-
-  try {
-    const response = await fetch(isEditingCourse.value ? `/api/courses/${editingCourseId.value}` : '/api/courses', {
-      method: isEditingCourse.value ? 'PUT' : 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        title: courseForm.title,
-        department: courseForm.department,
-        description: courseForm.description,
-        tutorIds: courseForm.tutorIds
-      })
-    })
-
-    if (!response.ok) {
-      throw new Error(await readError(response, 'Unable to save course'))
-    }
-
-    success.value = isEditingCourse.value ? 'Course updated.' : 'Course created.'
-    resetCourseForm()
-    await loadCourses()
-  } catch (err) {
-    courseFormError.value = err.message || 'Unable to save course.'
-  } finally {
-    courseSaving.value = false
-  }
-}
-
-const deleteTutor = async (tutor) => {
-  if (!window.confirm(`Delete ${tutor.name}?`)) {
-    return
-  }
-
-  error.value = ''
-  tutorFormError.value = ''
-  success.value = ''
-  deletingTutorId.value = tutor.id
-
-  try {
-    const response = await fetch(`/api/tutors/${tutor.id}`, {
-      method: 'DELETE',
-      credentials: 'include'
-    })
-
-    if (!response.ok) {
-      throw new Error(await readError(response, 'Unable to delete tutor'))
-    }
-
-    if (editingTutorId.value === tutor.id) {
-      resetTutorForm()
-    }
-
-    success.value = 'Tutor deleted.'
-    await Promise.all([loadTutors(), loadCourses()])
-  } catch (err) {
-    error.value = err.message || 'Unable to delete tutor.'
-  } finally {
-    deletingTutorId.value = null
-  }
-}
-
-const deleteCourse = async (course) => {
-  if (!window.confirm(`Delete ${course.title}?`)) {
-    return
-  }
-
-  error.value = ''
-  success.value = ''
-  deletingCourseId.value = course.id
-
-  try {
-    const response = await fetch(`/api/courses/${course.id}`, {
-      method: 'DELETE',
-      credentials: 'include'
-    })
-
-    if (!response.ok) {
-      throw new Error(await readError(response, 'Unable to delete course'))
-    }
-
-    if (editingCourseId.value === course.id) {
-      resetCourseForm()
-    }
-
-    success.value = 'Course deleted.'
-    await loadCourses()
-  } catch (err) {
-    error.value = err.message || 'Unable to delete course.'
-  } finally {
-    deletingCourseId.value = null
-  }
 }
 
 onMounted(() => {

@@ -1,0 +1,131 @@
+import { jest } from '@jest/globals'
+import {
+  createCourse,
+  createTutor,
+  deleteCourse,
+  deleteTutor,
+  fetchCourse,
+  listCourses,
+  listTutors,
+  updateCourse,
+  updateTutor
+} from './adminApi.js'
+
+const jsonResponse = ({ ok = true, body = {} } = {}) => ({
+  ok,
+  json: jest.fn(async () => body)
+})
+
+describe('admin API adapter', () => {
+  it('uses admin tutor management requests with credentials and JSON payloads', async () => {
+    const fetcher = jest.fn(async () => jsonResponse({ body: { data: { id: 1 } } }))
+
+    await createTutor({
+      name: 'Ada Lovelace',
+      department: 'Computer Science',
+      bio: 'Teaches algorithms.',
+      fetcher
+    })
+    await updateTutor({
+      tutorId: 1,
+      name: 'Ada Updated',
+      department: 'Software Engineering',
+      bio: 'Updated bio.',
+      fetcher
+    })
+    await deleteTutor({ tutorId: 1, fetcher })
+
+    expect(fetcher).toHaveBeenNthCalledWith(1, '/api/tutors', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        name: 'Ada Lovelace',
+        department: 'Computer Science',
+        bio: 'Teaches algorithms.'
+      })
+    })
+    expect(fetcher).toHaveBeenNthCalledWith(2, '/api/tutors/1', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        name: 'Ada Updated',
+        department: 'Software Engineering',
+        bio: 'Updated bio.'
+      })
+    })
+    expect(fetcher).toHaveBeenNthCalledWith(3, '/api/tutors/1', {
+      method: 'DELETE',
+      credentials: 'include'
+    })
+  })
+
+  it('uses admin course management requests with detail loading and assigned tutors', async () => {
+    const fetcher = jest.fn(async () => jsonResponse({ body: { data: { id: 2 } } }))
+
+    await listTutors({ fetcher })
+    await listCourses({ fetcher })
+    await fetchCourse({ courseId: 2, fetcher })
+    await createCourse({
+      title: 'COS10005 Web Development',
+      department: 'Computer Science',
+      description: 'Builds web applications.',
+      tutorIds: [1, 3],
+      fetcher
+    })
+    await updateCourse({
+      courseId: 2,
+      title: 'COS10005 Web Development',
+      department: 'Computer Science',
+      description: 'Updated.',
+      tutorIds: [3],
+      fetcher
+    })
+    await deleteCourse({ courseId: 2, fetcher })
+
+    expect(fetcher).toHaveBeenNthCalledWith(1, '/api/tutors')
+    expect(fetcher).toHaveBeenNthCalledWith(2, '/api/courses')
+    expect(fetcher).toHaveBeenNthCalledWith(3, '/api/courses/2')
+    expect(fetcher).toHaveBeenNthCalledWith(4, '/api/courses', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        title: 'COS10005 Web Development',
+        department: 'Computer Science',
+        description: 'Builds web applications.',
+        tutorIds: [1, 3]
+      })
+    })
+    expect(fetcher).toHaveBeenNthCalledWith(5, '/api/courses/2', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        title: 'COS10005 Web Development',
+        department: 'Computer Science',
+        description: 'Updated.',
+        tutorIds: [3]
+      })
+    })
+    expect(fetcher).toHaveBeenNthCalledWith(6, '/api/courses/2', {
+      method: 'DELETE',
+      credentials: 'include'
+    })
+  })
+
+  it('maps backend error messages from failed admin responses', async () => {
+    const fetcher = jest.fn(async () => jsonResponse({
+      ok: false,
+      body: { message: 'Duplicate tutor name' }
+    }))
+
+    await expect(createTutor({
+      name: 'Ada Lovelace',
+      department: 'Computer Science',
+      bio: 'Teaches algorithms.',
+      fetcher
+    })).rejects.toThrow('Duplicate tutor name')
+  })
+})
