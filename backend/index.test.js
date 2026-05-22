@@ -53,7 +53,8 @@ describe('GET /api/tutors', () => {
         department: 'Computer Science',
         bio: 'Specialises in web development and human-computer interaction.',
         created_at: '2026-05-18T00:00:00.000Z',
-        updated_at: '2026-05-18T00:00:00.000Z'
+        updated_at: '2026-05-18T00:00:00.000Z',
+        has_favorite: 0
       },
       {
         id: 2,
@@ -61,12 +62,17 @@ describe('GET /api/tutors', () => {
         department: 'Information Systems',
         bio: 'Teaches database design and enterprise systems.',
         created_at: '2026-05-18T00:00:00.000Z',
-        updated_at: '2026-05-18T00:00:00.000Z'
+        updated_at: '2026-05-18T00:00:00.000Z',
+        has_favorite: 0
       }
     ];
     const mockConn = {
       query: jest.fn()
         .mockResolvedValueOnce([{ total: 2 }])
+        .mockResolvedValueOnce([
+          { department: 'Computer Science' },
+          { department: 'Information Systems' }
+        ])
         .mockResolvedValueOnce(mockTutors),
       release: jest.fn()
     };
@@ -75,10 +81,17 @@ describe('GET /api/tutors', () => {
     const res = await request(app).get('/api/tutors');
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: mockTutors, total: 2 });
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: mockTutors.map((tutor) => ({ ...tutor, has_favorite: false })),
+      total: 2,
+      metadata: {
+        departments: ['Computer Science', 'Information Systems']
+      }
+    });
     expect(mockConn.query).toHaveBeenNthCalledWith(
-      2,
-      'SELECT id, name, department, bio, created_at, updated_at FROM Tutors ORDER BY name ASC'
+      3,
+      'SELECT id, name, department, bio, created_at, updated_at, 0 AS has_favorite FROM Tutors ORDER BY name ASC'
     );
     expect(mockConn.release).toHaveBeenCalled();
 
@@ -104,12 +117,14 @@ describe('GET /api/tutors', () => {
         department: 'Computer Science',
         bio: 'Specialises in web development and human-computer interaction.',
         created_at: '2026-05-18T00:00:00.000Z',
-        updated_at: '2026-05-18T00:00:00.000Z'
+        updated_at: '2026-05-18T00:00:00.000Z',
+        has_favorite: 0
       }
     ];
     const mockConn = {
       query: jest.fn()
         .mockResolvedValueOnce([{ total: 1 }])
+        .mockResolvedValueOnce([{ department: 'Computer Science' }])
         .mockResolvedValueOnce(mockTutors),
       release: jest.fn()
     };
@@ -120,9 +135,21 @@ describe('GET /api/tutors', () => {
       .query({ search: 'maya', department: 'Computer Science' });
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: mockTutors, total: 1 });
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: [{ ...mockTutors[0], has_favorite: false }],
+      total: 1,
+      metadata: {
+        departments: ['Computer Science']
+      }
+    });
     expect(mockConn.query).toHaveBeenNthCalledWith(
       2,
+      expect.stringContaining('WHERE (name LIKE ? OR bio LIKE ?) AND department IS NOT NULL AND department <> ""'),
+      ['%maya%', '%maya%']
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      3,
       expect.stringContaining('WHERE (name LIKE ? OR bio LIKE ?) AND department = ?'),
       ['%maya%', '%maya%', 'Computer Science']
     );
@@ -139,12 +166,14 @@ describe('GET /api/tutors', () => {
         department: 'Computer Science',
         bio: 'Teaches software architecture.',
         created_at: '2026-05-18T00:00:00.000Z',
-        updated_at: '2026-05-18T00:00:00.000Z'
+        updated_at: '2026-05-18T00:00:00.000Z',
+        has_favorite: 0
       }
     ];
     const mockConn = {
       query: jest.fn()
         .mockResolvedValueOnce([{ total: 5 }])
+        .mockResolvedValueOnce([{ department: 'Computer Science' }])
         .mockResolvedValueOnce(mockTutors),
       release: jest.fn()
     };
@@ -155,11 +184,111 @@ describe('GET /api/tutors', () => {
       .query({ page: '2', limit: '2' });
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: mockTutors, total: 5 });
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: [{ ...mockTutors[0], has_favorite: false }],
+      total: 5,
+      metadata: {
+        departments: ['Computer Science']
+      }
+    });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      3,
+      'SELECT id, name, department, bio, created_at, updated_at, 0 AS has_favorite FROM Tutors ORDER BY name ASC LIMIT ? OFFSET ?',
+      [2, 2]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return tutor department metadata independent of the current page', async () => {
+    const mockTutors = [
+      {
+        id: 3,
+        name: 'Dr Omar Wright',
+        department: 'Computer Science',
+        bio: 'Teaches software architecture.',
+        created_at: '2026-05-18T00:00:00.000Z',
+        updated_at: '2026-05-18T00:00:00.000Z',
+        has_favorite: 0
+      }
+    ];
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ total: 5 }])
+        .mockResolvedValueOnce([
+          { department: 'Computer Science' },
+          { department: 'Information Systems' }
+        ])
+        .mockResolvedValueOnce(mockTutors),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/tutors')
+      .query({ page: '1', limit: '1' });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: [
+        {
+          ...mockTutors[0],
+          has_favorite: false
+        }
+      ],
+      total: 5,
+      metadata: {
+        departments: ['Computer Science', 'Information Systems']
+      }
+    });
     expect(mockConn.query).toHaveBeenNthCalledWith(
       2,
-      'SELECT id, name, department, bio, created_at, updated_at FROM Tutors ORDER BY name ASC LIMIT ? OFFSET ?',
-      [2, 2]
+      'SELECT DISTINCT department FROM Tutors WHERE department IS NOT NULL AND department <> "" ORDER BY department ASC'
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return actual tutor favorite state for students', async () => {
+    const token = jwt.sign(
+      { id: 2, role: 'student' },
+      process.env.JWT_SECRET || 'development-jwt-secret',
+      { expiresIn: '7d' }
+    );
+    const mockTutors = [
+      {
+        id: 1,
+        name: 'Dr Maya Chen',
+        department: 'Computer Science',
+        bio: 'Specialises in web development and human-computer interaction.',
+        created_at: '2026-05-18T00:00:00.000Z',
+        updated_at: '2026-05-18T00:00:00.000Z',
+        has_favorite: 1
+      }
+    ];
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ total: 1 }])
+        .mockResolvedValueOnce([{ department: 'Computer Science' }])
+        .mockResolvedValueOnce(mockTutors),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/tutors')
+      .set('Cookie', [`auth_token=${token}`]);
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.data[0].has_favorite).toBe(true);
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining('LEFT JOIN Favorites f ON f.entity_type = "tutor"'),
+      [2]
     );
     expect(mockConn.release).toHaveBeenCalled();
 
@@ -174,12 +303,14 @@ describe('GET /api/tutors', () => {
         department: 'Computer Science',
         bio: 'Specialises in web development and human-computer interaction.',
         created_at: '2026-05-18T00:00:00.000Z',
-        updated_at: '2026-05-18T00:00:00.000Z'
+        updated_at: '2026-05-18T00:00:00.000Z',
+        has_favorite: 0
       }
     ];
     const mockConn = {
       query: jest.fn()
         .mockResolvedValueOnce([{ total: 1 }])
+        .mockResolvedValueOnce([{ department: 'Computer Science' }])
         .mockResolvedValueOnce(mockTutors),
       release: jest.fn()
     };
@@ -190,10 +321,17 @@ describe('GET /api/tutors', () => {
       .query({ sort: 'best-match' });
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: mockTutors, total: 1 });
-    expect(mockConn.query.mock.calls[1][0]).toContain('AVG(rating) AS average_rating');
-    expect(mockConn.query.mock.calls[1][0]).toContain('COUNT(*) AS review_count');
-    expect(mockConn.query.mock.calls[1][0]).toContain('ORDER BY (COALESCE(review_stats.average_rating, 0) * 2) + LOG10(COALESCE(review_stats.review_count, 0) + 1) DESC');
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: [{ ...mockTutors[0], has_favorite: false }],
+      total: 1,
+      metadata: {
+        departments: ['Computer Science']
+      }
+    });
+    expect(mockConn.query.mock.calls[2][0]).toContain('AVG(rating) AS average_rating');
+    expect(mockConn.query.mock.calls[2][0]).toContain('COUNT(*) AS review_count');
+    expect(mockConn.query.mock.calls[2][0]).toContain('ORDER BY (COALESCE(review_stats.average_rating, 0) * 2) + LOG10(COALESCE(review_stats.review_count, 0) + 1) DESC');
     expect(mockConn.release).toHaveBeenCalled();
 
     spy.mockRestore();
@@ -518,19 +656,25 @@ describe('GET /api/courses', () => {
         title: 'COS30043 Interface Design and Development',
         department: 'Computer Science',
         description: 'Design and build responsive web interfaces using modern frontend practices.',
-        tutor_names: 'Dr Maya Chen'
+        tutor_names: 'Dr Maya Chen',
+        has_favorite: 0
       },
       {
         id: 2,
         title: 'COS20031 Database Design',
         department: 'Information Systems',
         description: 'Model, normalize, and query relational data for software applications.',
-        tutor_names: 'Prof Liam Patel'
+        tutor_names: 'Prof Liam Patel',
+        has_favorite: 0
       }
     ];
     const mockConn = {
       query: jest.fn()
         .mockResolvedValueOnce([{ total: 2 }])
+        .mockResolvedValueOnce([
+          { department: 'Computer Science' },
+          { department: 'Information Systems' }
+        ])
         .mockResolvedValueOnce(mockCourses),
       release: jest.fn()
     };
@@ -539,9 +683,16 @@ describe('GET /api/courses', () => {
     const res = await request(app).get('/api/courses');
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: mockCourses, total: 2 });
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: mockCourses.map((course) => ({ ...course, has_favorite: false })),
+      total: 2,
+      metadata: {
+        departments: ['Computer Science', 'Information Systems']
+      }
+    });
     expect(mockConn.query).toHaveBeenNthCalledWith(
-      2,
+      3,
       expect.stringContaining('FROM Courses c')
     );
     expect(mockConn.release).toHaveBeenCalled();
@@ -567,12 +718,14 @@ describe('GET /api/courses', () => {
         title: 'COS30043 Interface Design and Development',
         department: 'Computer Science',
         description: 'Design and build responsive web interfaces using modern frontend practices.',
-        tutor_names: 'Dr Maya Chen'
+        tutor_names: 'Dr Maya Chen',
+        has_favorite: 0
       }
     ];
     const mockConn = {
       query: jest.fn()
         .mockResolvedValueOnce([{ total: 1 }])
+        .mockResolvedValueOnce([{ department: 'Computer Science' }])
         .mockResolvedValueOnce(mockCourses),
       release: jest.fn()
     };
@@ -583,14 +736,27 @@ describe('GET /api/courses', () => {
       .query({ search: 'interface', department: 'Computer Science' });
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: mockCourses, total: 1 });
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: [{ ...mockCourses[0], has_favorite: false }],
+      total: 1,
+      metadata: {
+        departments: ['Computer Science']
+      }
+    });
     expect(mockConn.query).toHaveBeenNthCalledWith(
       2,
       expect.stringContaining('WHERE (c.title LIKE ? OR c.description LIKE ? OR EXISTS ('),
+      ['%interface%', '%interface%', '%interface%']
+    );
+    expect(mockConn.query.mock.calls[1][0]).toContain('AND c.department IS NOT NULL AND c.department <> ""');
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining('WHERE (c.title LIKE ? OR c.description LIKE ? OR EXISTS ('),
       ['%interface%', '%interface%', '%interface%', 'Computer Science']
     );
-    expect(mockConn.query.mock.calls[1][0]).toContain('t_search.name LIKE ?');
-    expect(mockConn.query.mock.calls[1][0]).toContain('AND c.department = ?');
+    expect(mockConn.query.mock.calls[2][0]).toContain('t_search.name LIKE ?');
+    expect(mockConn.query.mock.calls[2][0]).toContain('AND c.department = ?');
     expect(mockConn.release).toHaveBeenCalled();
 
     spy.mockRestore();
@@ -603,12 +769,14 @@ describe('GET /api/courses', () => {
         title: 'COS30017 Software Development for Mobile Devices',
         department: 'Computer Science',
         description: 'Build mobile software with contemporary tooling.',
-        tutor_names: 'Dr Maya Chen'
+        tutor_names: 'Dr Maya Chen',
+        has_favorite: 0
       }
     ];
     const mockConn = {
       query: jest.fn()
         .mockResolvedValueOnce([{ total: 6 }])
+        .mockResolvedValueOnce([{ department: 'Computer Science' }])
         .mockResolvedValueOnce(mockCourses),
       release: jest.fn()
     };
@@ -619,11 +787,114 @@ describe('GET /api/courses', () => {
       .query({ page: '2', limit: '3' });
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: mockCourses, total: 6 });
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: [{ ...mockCourses[0], has_favorite: false }],
+      total: 6,
+      metadata: {
+        departments: ['Computer Science']
+      }
+    });
     expect(mockConn.query).toHaveBeenNthCalledWith(
-      2,
+      3,
       expect.stringContaining('LIMIT ? OFFSET ?'),
       [3, 3]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return course department metadata independent of the current page while searched', async () => {
+    const mockCourses = [
+      {
+        id: 3,
+        title: 'COS30017 Software Development for Mobile Devices',
+        department: 'Computer Science',
+        description: 'Build mobile software with contemporary tooling.',
+        tutor_names: 'Dr Maya Chen',
+        has_favorite: 0
+      }
+    ];
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ total: 3 }])
+        .mockResolvedValueOnce([
+          { department: 'Computer Science' },
+          { department: 'Information Systems' }
+        ])
+        .mockResolvedValueOnce(mockCourses),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/courses')
+      .query({ search: 'software', page: '1', limit: '1' });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: [
+        {
+          ...mockCourses[0],
+          has_favorite: false
+        }
+      ],
+      total: 3,
+      metadata: {
+        departments: ['Computer Science', 'Information Systems']
+      }
+    });
+    expect(mockConn.query.mock.calls[1][0]).toContain('SELECT DISTINCT c.department AS department');
+    expect(mockConn.query.mock.calls[1][0]).toContain('WHERE (c.title LIKE ? OR c.description LIKE ? OR EXISTS (');
+    expect(mockConn.query.mock.calls[1][0]).toContain('AND c.department IS NOT NULL AND c.department <> ""');
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      expect.any(String),
+      ['%software%', '%software%', '%software%']
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return actual course favorite state for students', async () => {
+    const token = jwt.sign(
+      { id: 2, role: 'student' },
+      process.env.JWT_SECRET || 'development-jwt-secret',
+      { expiresIn: '7d' }
+    );
+    const mockCourses = [
+      {
+        id: 1,
+        title: 'COS30043 Interface Design and Development',
+        department: 'Computer Science',
+        description: 'Design and build responsive web interfaces using modern frontend practices.',
+        tutor_ids: '1',
+        tutor_names: 'Dr Maya Chen',
+        has_favorite: 1
+      }
+    ];
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ total: 1 }])
+        .mockResolvedValueOnce([{ department: 'Computer Science' }])
+        .mockResolvedValueOnce(mockCourses),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/courses')
+      .set('Cookie', [`auth_token=${token}`]);
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body.data[0].has_favorite).toBe(true);
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining('LEFT JOIN Favorites f ON f.entity_type = "course"'),
+      [2]
     );
     expect(mockConn.release).toHaveBeenCalled();
 
@@ -637,12 +908,14 @@ describe('GET /api/courses', () => {
         title: 'COS30043 Interface Design and Development',
         department: 'Computer Science',
         description: 'Design and build responsive web interfaces using modern frontend practices.',
-        tutor_names: 'Dr Maya Chen'
+        tutor_names: 'Dr Maya Chen',
+        has_favorite: 0
       }
     ];
     const mockConn = {
       query: jest.fn()
         .mockResolvedValueOnce([{ total: 1 }])
+        .mockResolvedValueOnce([{ department: 'Computer Science' }])
         .mockResolvedValueOnce(mockCourses),
       release: jest.fn()
     };
@@ -653,9 +926,16 @@ describe('GET /api/courses', () => {
       .query({ sort: 'recently-active' });
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: mockCourses, total: 1 });
-    expect(mockConn.query.mock.calls[1][0]).toContain('MAX(created_at) AS latest_review_at');
-    expect(mockConn.query.mock.calls[1][0]).toContain('ORDER BY GREATEST(c.updated_at, COALESCE(review_stats.latest_review_at, c.updated_at)) DESC');
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: [{ ...mockCourses[0], has_favorite: false }],
+      total: 1,
+      metadata: {
+        departments: ['Computer Science']
+      }
+    });
+    expect(mockConn.query.mock.calls[2][0]).toContain('MAX(created_at) AS latest_review_at');
+    expect(mockConn.query.mock.calls[2][0]).toContain('ORDER BY GREATEST(c.updated_at, COALESCE(review_stats.latest_review_at, c.updated_at)) DESC');
     expect(mockConn.release).toHaveBeenCalled();
 
     spy.mockRestore();

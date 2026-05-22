@@ -23,7 +23,12 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   const viewer = decodeAuthCookie(req);
   const isStudent = viewer?.role === 'student';
-  const { whereClause, params } = buildCourseFilters(readDirectoryFilters(req.query));
+  const directoryFilters = readDirectoryFilters(req.query);
+  const { whereClause, params } = buildCourseFilters(directoryFilters);
+  const departmentFilters = buildCourseFilters({ search: directoryFilters.search, department: '' });
+  const departmentWhereClause = departmentFilters.whereClause
+    ? `${departmentFilters.whereClause} AND c.department IS NOT NULL AND c.department <> ""`
+    : ' WHERE c.department IS NOT NULL AND c.department <> ""';
   const pagination = readPagination(req.query);
   const sort = readDirectorySort(req.query);
   const paginationClause = pagination.isPaginated ? ' LIMIT ? OFFSET ?' : '';
@@ -42,6 +47,10 @@ router.get('/', async (req, res) => {
       ? await conn.query(`SELECT COUNT(*) AS total FROM Courses c${whereClause}`, params)
       : await conn.query(`SELECT COUNT(*) AS total FROM Courses c${whereClause}`);
     const total = readTotalCount(countRows);
+    const departmentRows = departmentFilters.params.length > 0
+      ? await conn.query(`SELECT DISTINCT c.department AS department FROM Courses c${departmentWhereClause} ORDER BY c.department ASC`, departmentFilters.params)
+      : await conn.query(`SELECT DISTINCT c.department AS department FROM Courses c${departmentWhereClause} ORDER BY c.department ASC`);
+    const departments = departmentRows.map((row) => row.department);
     let rows;
 
     if (isStudent) {
@@ -77,7 +86,8 @@ router.get('/', async (req, res) => {
         c.created_at,
         c.updated_at,
         COALESCE(GROUP_CONCAT(t.id ORDER BY t.name SEPARATOR ','), '') AS tutor_ids,
-        COALESCE(GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ', '), '') AS tutor_names
+        COALESCE(GROUP_CONCAT(t.name ORDER BY t.name SEPARATOR ', '), '') AS tutor_names,
+        0 AS has_favorite
       FROM Courses c
       LEFT JOIN Course_Tutors ct ON ct.course_id = c.id
       LEFT JOIN Tutors t ON t.id = ct.tutor_id
@@ -93,7 +103,7 @@ router.get('/', async (req, res) => {
         : await conn.query(sql);
     }
 
-    res.json({ status: 'ok', data: rows.map(normalizeFavoriteFields), total });
+    res.json({ status: 'ok', data: rows.map(normalizeFavoriteFields), total, metadata: { departments } });
   } catch (err) {
     console.error('Courses query error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to fetch courses' });

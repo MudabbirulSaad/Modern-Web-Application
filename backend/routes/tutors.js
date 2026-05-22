@@ -21,7 +21,12 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   const viewer = decodeAuthCookie(req);
   const isStudent = viewer?.role === 'student';
-  const { whereClause, params } = buildTutorFilters(readDirectoryFilters(req.query));
+  const directoryFilters = readDirectoryFilters(req.query);
+  const { whereClause, params } = buildTutorFilters(directoryFilters);
+  const departmentFilters = buildTutorFilters({ search: directoryFilters.search, department: '' });
+  const departmentWhereClause = departmentFilters.whereClause
+    ? `${departmentFilters.whereClause} AND department IS NOT NULL AND department <> ""`
+    : ' WHERE department IS NOT NULL AND department <> ""';
   const pagination = readPagination(req.query);
   const sort = readDirectorySort(req.query);
   const paginationClause = pagination.isPaginated ? ' LIMIT ? OFFSET ?' : '';
@@ -37,6 +42,10 @@ router.get('/', async (req, res) => {
       ? await conn.query(`SELECT COUNT(*) AS total FROM Tutors${whereClause}`, params)
       : await conn.query(`SELECT COUNT(*) AS total FROM Tutors${whereClause}`);
     const total = readTotalCount(countRows);
+    const departmentRows = departmentFilters.params.length > 0
+      ? await conn.query(`SELECT DISTINCT department FROM Tutors${departmentWhereClause} ORDER BY department ASC`, departmentFilters.params)
+      : await conn.query(`SELECT DISTINCT department FROM Tutors${departmentWhereClause} ORDER BY department ASC`);
+    const departments = departmentRows.map((row) => row.department);
     let rows;
 
     if (isStudent) {
@@ -65,7 +74,8 @@ router.get('/', async (req, res) => {
         t.department,
         t.bio,
         t.created_at,
-        t.updated_at
+        t.updated_at,
+        0 AS has_favorite
       FROM Tutors t
       ${reviewStatsJoin}
       ${whereClause}
@@ -77,14 +87,14 @@ router.get('/', async (req, res) => {
         ? await conn.query(sql, queryParams)
         : await conn.query(sql);
     } else {
-      const sql = `SELECT id, name, department, bio, created_at, updated_at FROM Tutors${whereClause} ORDER BY name ASC${paginationClause}`;
+      const sql = `SELECT id, name, department, bio, created_at, updated_at, 0 AS has_favorite FROM Tutors${whereClause} ORDER BY name ASC${paginationClause}`;
       const queryParams = [...params, ...paginationParams];
       rows = queryParams.length > 0
         ? await conn.query(sql, queryParams)
         : await conn.query(sql);
     }
 
-    res.json({ status: 'ok', data: rows.map(normalizeFavoriteFields), total });
+    res.json({ status: 'ok', data: rows.map(normalizeFavoriteFields), total, metadata: { departments } });
   } catch (err) {
     console.error('Tutors query error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to fetch tutors' });

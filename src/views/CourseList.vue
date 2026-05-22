@@ -30,16 +30,6 @@ let searchTimeout = null
 const hasCourses = computed(() => courses.value.length > 0)
 const hasActiveFilters = computed(() => Boolean(searchQuery.value.trim() || departmentFilter.value))
 
-const updateDepartments = (items) => {
-  const nextDepartments = new Set(availableDepartments.value)
-  items.forEach((course) => {
-    if (course.department) {
-      nextDepartments.add(course.department)
-    }
-  })
-  availableDepartments.value = [...nextDepartments].sort((a, b) => a.localeCompare(b))
-}
-
 const fetchCourses = async () => {
   const params = new URLSearchParams()
   const search = searchQuery.value.trim()
@@ -72,7 +62,9 @@ const fetchCourses = async () => {
     const payload = await response.json()
     courses.value = payload.data || []
     totalCourses.value = Number(payload.total || 0)
-    updateDepartments(courses.value)
+    availableDepartments.value = Array.isArray(payload.metadata?.departments)
+      ? payload.metadata.departments
+      : []
   } catch (err) {
     error.value = 'Courses are unavailable right now. Please try again shortly.'
   } finally {

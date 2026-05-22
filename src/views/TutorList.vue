@@ -30,16 +30,6 @@ let searchTimeout = null
 const hasTutors = computed(() => tutors.value.length > 0)
 const hasActiveFilters = computed(() => Boolean(searchQuery.value.trim() || departmentFilter.value))
 
-const updateDepartments = (items) => {
-  const nextDepartments = new Set(availableDepartments.value)
-  items.forEach((tutor) => {
-    if (tutor.department) {
-      nextDepartments.add(tutor.department)
-    }
-  })
-  availableDepartments.value = [...nextDepartments].sort((a, b) => a.localeCompare(b))
-}
-
 const fetchTutors = async () => {
   const params = new URLSearchParams()
   const search = searchQuery.value.trim()
@@ -72,7 +62,9 @@ const fetchTutors = async () => {
     const payload = await response.json()
     tutors.value = payload.data || []
     totalTutors.value = Number(payload.total || 0)
-    updateDepartments(tutors.value)
+    availableDepartments.value = Array.isArray(payload.metadata?.departments)
+      ? payload.metadata.departments
+      : []
   } catch (err) {
     error.value = 'Tutors are unavailable right now. Please try again shortly.'
   } finally {
