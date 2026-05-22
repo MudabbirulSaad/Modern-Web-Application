@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import BaseCard from './common/BaseCard.vue'
 import { getRatingFromArrowKey, reviewStarOptions } from './reviewStars'
+import { shouldShowReviewActions } from './reviewActions'
 import { useUserStore } from '../store/userStore'
 
 const props = defineProps({
@@ -35,7 +36,6 @@ const hasReviews = computed(() => reviews.value.length > 0)
 const canReview = computed(() => userStore.isStudent)
 const entityLabel = computed(() => props.entityType === 'course' ? 'course' : 'tutor')
 const reviewLimitText = computed(() => canReview.value ? 'All reviews' : 'Top reviews')
-const isReviewAuthor = (review) => userStore.userId && Number(review.user_id) === Number(userStore.userId)
 
 const upvoteLabel = (review) => `${review.upvotes} helpful vote${Number(review.upvotes) === 1 ? '' : 's'}`
 
@@ -324,7 +324,7 @@ watch(
               {{ '★'.repeat(review.rating) }}{{ '☆'.repeat(5 - review.rating) }}
             </div>
 
-            <div v-if="isReviewAuthor(review)" class="btn-group btn-group-sm" aria-label="Review actions">
+            <div v-if="shouldShowReviewActions(review)" class="btn-group btn-group-sm" aria-label="Review actions">
               <button
                 class="btn btn-directory-action-secondary"
                 type="button"

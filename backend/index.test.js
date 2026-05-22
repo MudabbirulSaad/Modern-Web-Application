@@ -1740,7 +1740,14 @@ describe('Review endpoints', () => {
     const res = await request(app).get('/api/reviews?entity_type=tutor&entity_id=2');
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: reviews });
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: reviews.map((review) => ({ ...review, can_manage: false })),
+      metadata: {
+        access: 'guest-preview',
+        preview_limit: 3
+      }
+    });
     expect(mockConn.query).toHaveBeenCalledWith(
       expect.stringContaining('LIMIT ?'),
       ['tutor', 2, 3]
@@ -1751,8 +1758,34 @@ describe('Review endpoints', () => {
   });
 
   it('should return all matching reviews for authenticated students', async () => {
+    const reviews = [
+      {
+        id: 1,
+        user_id: 7,
+        username: 'studentone',
+        entity_type: 'course',
+        entity_id: 3,
+        rating: 5,
+        comment: 'Strong weekly examples.',
+        upvotes: 4,
+        has_upvoted: 0,
+        created_at: '2026-05-18T00:00:00.000Z'
+      },
+      {
+        id: 2,
+        user_id: 9,
+        username: 'studenttwo',
+        entity_type: 'course',
+        entity_id: 3,
+        rating: 4,
+        comment: 'Helpful tutorial activities.',
+        upvotes: 2,
+        has_upvoted: 1,
+        created_at: '2026-05-19T00:00:00.000Z'
+      }
+    ];
     const mockConn = {
-      query: jest.fn().mockResolvedValue([]),
+      query: jest.fn().mockResolvedValue(reviews),
       release: jest.fn()
     };
     const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
@@ -1762,7 +1795,16 @@ describe('Review endpoints', () => {
       .set('Cookie', studentCookie());
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: [] });
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: [
+        { ...reviews[0], has_upvoted: false, can_manage: true },
+        { ...reviews[1], has_upvoted: true, can_manage: false }
+      ],
+      metadata: {
+        access: 'student-full'
+      }
+    });
     expect(mockConn.query).toHaveBeenCalledWith(
       expect.not.stringContaining('LIMIT ?'),
       [7, 'course', 3]
@@ -1804,7 +1846,7 @@ describe('Review endpoints', () => {
       });
 
     expect(res.statusCode).toEqual(201);
-    expect(res.body).toEqual({ status: 'ok', data: createdReview });
+    expect(res.body).toEqual({ status: 'ok', data: { ...createdReview, can_manage: true } });
     expect(mockConn.query).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO Reviews (user_id, entity_type, entity_id, rating, comment) VALUES (?, ?, ?, ?, ?)',
@@ -1859,7 +1901,7 @@ describe('Review endpoints', () => {
       });
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: updatedReview });
+    expect(res.body).toEqual({ status: 'ok', data: { ...updatedReview, can_manage: true } });
     expect(mockConn.query).toHaveBeenNthCalledWith(
       1,
       'UPDATE Reviews SET rating = ?, comment = ? WHERE id = ? AND user_id = ?',
@@ -1950,7 +1992,7 @@ describe('Review endpoints', () => {
       .set('Cookie', studentCookie());
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: updatedReview });
+    expect(res.body).toEqual({ status: 'ok', data: { ...updatedReview, can_manage: false } });
     expect(mockConn.query).toHaveBeenNthCalledWith(
       3,
       'INSERT INTO Review_Upvotes (review_id, user_id) VALUES (?, ?)',
@@ -1999,7 +2041,7 @@ describe('Review endpoints', () => {
       .set('Cookie', studentCookie());
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: updatedReview });
+    expect(res.body).toEqual({ status: 'ok', data: { ...updatedReview, can_manage: false } });
     expect(mockConn.query).toHaveBeenNthCalledWith(
       3,
       'DELETE FROM Review_Upvotes WHERE review_id = ? AND user_id = ?',
@@ -2029,6 +2071,7 @@ describe('Review endpoints', () => {
         rating: 5,
         comment: 'Clear architecture examples.',
         upvotes: 2,
+        has_upvoted: 0,
         created_at: '2026-05-18T00:00:00.000Z'
       }
     ];
@@ -2043,11 +2086,21 @@ describe('Review endpoints', () => {
       .set('Cookie', studentCookie());
 
     expect(res.statusCode).toEqual(200);
-    expect(res.body).toEqual({ status: 'ok', data: reviewHistory });
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: [
+        {
+          ...reviewHistory[0],
+          has_upvoted: false,
+          can_manage: true
+        }
+      ]
+    });
     expect(mockConn.query).toHaveBeenCalledWith(
       expect.stringContaining('LEFT JOIN Courses c ON r.entity_type = "course" AND c.id = r.entity_id'),
       [7]
     );
+    expect(mockConn.query.mock.calls[0][0]).toEqual(expect.stringContaining('0 AS has_upvoted'));
     expect(mockConn.release).toHaveBeenCalled();
 
     spy.mockRestore();

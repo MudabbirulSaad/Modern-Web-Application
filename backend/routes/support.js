@@ -274,19 +274,26 @@ const readFavoritePayload = (body) => ({
   entityId: Number(body.entity_id)
 });
 
-const normalizeReview = (review) => {
+const normalizeReview = (review, viewerId = null) => {
   if (!review) {
     return null;
   }
 
+  const normalized = {
+    ...review,
+    can_manage: Number.isInteger(Number(viewerId)) && Number(viewerId) > 0
+      ? Number(review.user_id) === Number(viewerId)
+      : false
+  };
+
   if (Object.prototype.hasOwnProperty.call(review, 'has_upvoted')) {
     return {
-      ...review,
+      ...normalized,
       has_upvoted: Boolean(Number(review.has_upvoted))
     };
   }
 
-  return review;
+  return normalized;
 };
 
 const normalizeFavoriteFields = (row) => {
@@ -385,7 +392,7 @@ const selectReviewById = async (conn, reviewId, viewerId = null) => {
     params
   );
 
-  return normalizeReview(rows[0] || null);
+  return normalizeReview(rows[0] || null, hasViewer ? Number(viewerId) : null);
 };
 
 const selectFavoriteById = async (conn, favoriteId) => {

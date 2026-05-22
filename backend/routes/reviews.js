@@ -61,7 +61,13 @@ router.get('/reviews', async (req, res) => {
       params
     );
 
-    res.json({ status: 'ok', data: rows.map(normalizeReview) });
+    res.json({
+      status: 'ok',
+      data: rows.map((review) => normalizeReview(review, isStudent ? Number(viewer.id) : null)),
+      metadata: isStudent
+        ? { access: 'student-full' }
+        : { access: 'guest-preview', preview_limit: 3 }
+    });
   } catch (err) {
     console.error('Reviews query error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to fetch reviews' });
@@ -265,6 +271,7 @@ router.get('/users/:id/reviews', requireStudent, async (req, res) => {
         r.rating,
         r.comment,
         r.upvotes,
+        0 AS has_upvoted,
         r.created_at
       FROM Reviews r
       INNER JOIN Users u ON u.id = r.user_id
@@ -276,7 +283,7 @@ router.get('/users/:id/reviews', requireStudent, async (req, res) => {
       [userId]
     );
 
-    res.json({ status: 'ok', data: rows });
+    res.json({ status: 'ok', data: rows.map((review) => normalizeReview(review, userId)) });
   } catch (err) {
     console.error('User review history query error:', err);
     res.status(500).json({ status: 'error', message: 'Unable to fetch review history' });
