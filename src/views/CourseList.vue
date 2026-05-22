@@ -1,109 +1,46 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
 import BaseTransitionList from '../components/common/BaseTransitionList.vue'
 import FavoriteButton from '../components/common/FavoriteButton.vue'
 import PaginationControls from '../components/common/PaginationControls.vue'
+import { DEFAULT_DIRECTORY_SORT_OPTIONS, useDirectoryBrowsing } from '../directory/useDirectoryBrowsing.js'
 import { useUserStore } from '../store/userStore'
 
 const PAGE_LIMIT = 6
-const SORT_OPTIONS = [
-  { value: 'best-match', label: 'Best Match' },
-  { value: 'recently-active', label: 'Recently Active' },
-  { value: 'alphabetical', label: 'Alphabetical' }
-]
+const SORT_OPTIONS = DEFAULT_DIRECTORY_SORT_OPTIONS
 const userStore = useUserStore()
-const courses = ref([])
-const loading = ref(true)
-const error = ref('')
 const favoriteError = ref('')
 const updatingFavorites = ref(new Set())
-const searchQuery = ref('')
-const departmentFilter = ref('')
-const sortOrder = ref('best-match')
-const availableDepartments = ref([])
-const currentPage = ref(1)
-const totalCourses = ref(0)
-let searchTimeout = null
 
-const hasCourses = computed(() => courses.value.length > 0)
-const hasActiveFilters = computed(() => Boolean(searchQuery.value.trim() || departmentFilter.value))
-
-const fetchCourses = async () => {
-  const params = new URLSearchParams()
-  const search = searchQuery.value.trim()
-
-  if (search) {
-    params.set('search', search)
-  }
-
-  if (departmentFilter.value) {
-    params.set('department', departmentFilter.value)
-  }
-
-  params.set('page', String(currentPage.value))
-  params.set('limit', String(PAGE_LIMIT))
-  params.set('sort', sortOrder.value)
-
-  loading.value = true
-  error.value = ''
-
-  try {
-    const queryString = params.toString()
-    const response = await fetch(`/api/courses${queryString ? `?${queryString}` : ''}`, {
-      credentials: 'include'
-    })
-
-    if (!response.ok) {
-      throw new Error('Unable to load courses')
-    }
-
-    const payload = await response.json()
-    courses.value = payload.data || []
-    totalCourses.value = Number(payload.total || 0)
-    availableDepartments.value = Array.isArray(payload.metadata?.departments)
-      ? payload.metadata.departments
-      : []
-  } catch (err) {
-    error.value = 'Courses are unavailable right now. Please try again shortly.'
-  } finally {
-    loading.value = false
-  }
-}
-
-const scheduleFetchCourses = () => {
-  window.clearTimeout(searchTimeout)
-  searchTimeout = window.setTimeout(fetchCourses, 300)
-}
-
-const clearFilters = () => {
-  searchQuery.value = ''
-  departmentFilter.value = ''
-}
-
-const setPage = (pageNumber) => {
-  currentPage.value = pageNumber
-  fetchCourses()
-}
-
-watch([searchQuery, departmentFilter, sortOrder], () => {
-  currentPage.value = 1
-  scheduleFetchCourses()
+const directory = useDirectoryBrowsing({
+  endpoint: '/api/courses',
+  pageLimit: PAGE_LIMIT,
+  errorMessage: 'Courses are unavailable right now. Please try again shortly.'
 })
 
-onMounted(fetchCourses)
+const courses = directory.items
+const loading = directory.loading
+const error = directory.error
+const searchQuery = directory.searchQuery
+const departmentFilter = directory.departmentFilter
+const sortOrder = directory.sortOrder
+const availableDepartments = directory.availableDepartments
+const currentPage = directory.currentPage
+const totalCourses = directory.totalItems
+const hasCourses = directory.hasItems
+const hasActiveFilters = directory.hasActiveFilters
+const clearFilters = directory.clearFilters
+const setPage = directory.setPage
 
-onUnmounted(() => {
-  window.clearTimeout(searchTimeout)
-})
+onMounted(directory.fetchItems)
+onUnmounted(directory.dispose)
 
 const isUpdatingFavorite = (courseId) => updatingFavorites.value.has(courseId)
 
 const setCourseFavorite = (courseId, hasFavorite) => {
-  courses.value = courses.value.map((course) => (
-    course.id === courseId ? { ...course, has_favorite: hasFavorite } : course
-  ))
+  directory.applyFavoriteState(courseId, hasFavorite)
 }
 
 const toggleFavorite = async (course) => {

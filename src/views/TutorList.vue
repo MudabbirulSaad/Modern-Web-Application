@@ -1,109 +1,46 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
 import BaseTransitionList from '../components/common/BaseTransitionList.vue'
 import FavoriteButton from '../components/common/FavoriteButton.vue'
 import PaginationControls from '../components/common/PaginationControls.vue'
+import { DEFAULT_DIRECTORY_SORT_OPTIONS, useDirectoryBrowsing } from '../directory/useDirectoryBrowsing.js'
 import { useUserStore } from '../store/userStore'
 
 const PAGE_LIMIT = 6
-const SORT_OPTIONS = [
-  { value: 'best-match', label: 'Best Match' },
-  { value: 'recently-active', label: 'Recently Active' },
-  { value: 'alphabetical', label: 'Alphabetical' }
-]
+const SORT_OPTIONS = DEFAULT_DIRECTORY_SORT_OPTIONS
 const userStore = useUserStore()
-const tutors = ref([])
-const loading = ref(true)
-const error = ref('')
 const favoriteError = ref('')
 const updatingFavorites = ref(new Set())
-const searchQuery = ref('')
-const departmentFilter = ref('')
-const sortOrder = ref('best-match')
-const availableDepartments = ref([])
-const currentPage = ref(1)
-const totalTutors = ref(0)
-let searchTimeout = null
 
-const hasTutors = computed(() => tutors.value.length > 0)
-const hasActiveFilters = computed(() => Boolean(searchQuery.value.trim() || departmentFilter.value))
-
-const fetchTutors = async () => {
-  const params = new URLSearchParams()
-  const search = searchQuery.value.trim()
-
-  if (search) {
-    params.set('search', search)
-  }
-
-  if (departmentFilter.value) {
-    params.set('department', departmentFilter.value)
-  }
-
-  params.set('page', String(currentPage.value))
-  params.set('limit', String(PAGE_LIMIT))
-  params.set('sort', sortOrder.value)
-
-  loading.value = true
-  error.value = ''
-
-  try {
-    const queryString = params.toString()
-    const response = await fetch(`/api/tutors${queryString ? `?${queryString}` : ''}`, {
-      credentials: 'include'
-    })
-
-    if (!response.ok) {
-      throw new Error('Unable to load tutors')
-    }
-
-    const payload = await response.json()
-    tutors.value = payload.data || []
-    totalTutors.value = Number(payload.total || 0)
-    availableDepartments.value = Array.isArray(payload.metadata?.departments)
-      ? payload.metadata.departments
-      : []
-  } catch (err) {
-    error.value = 'Tutors are unavailable right now. Please try again shortly.'
-  } finally {
-    loading.value = false
-  }
-}
-
-const scheduleFetchTutors = () => {
-  window.clearTimeout(searchTimeout)
-  searchTimeout = window.setTimeout(fetchTutors, 300)
-}
-
-const clearFilters = () => {
-  searchQuery.value = ''
-  departmentFilter.value = ''
-}
-
-const setPage = (pageNumber) => {
-  currentPage.value = pageNumber
-  fetchTutors()
-}
-
-watch([searchQuery, departmentFilter, sortOrder], () => {
-  currentPage.value = 1
-  scheduleFetchTutors()
+const directory = useDirectoryBrowsing({
+  endpoint: '/api/tutors',
+  pageLimit: PAGE_LIMIT,
+  errorMessage: 'Tutors are unavailable right now. Please try again shortly.'
 })
 
-onMounted(fetchTutors)
+const tutors = directory.items
+const loading = directory.loading
+const error = directory.error
+const searchQuery = directory.searchQuery
+const departmentFilter = directory.departmentFilter
+const sortOrder = directory.sortOrder
+const availableDepartments = directory.availableDepartments
+const currentPage = directory.currentPage
+const totalTutors = directory.totalItems
+const hasTutors = directory.hasItems
+const hasActiveFilters = directory.hasActiveFilters
+const clearFilters = directory.clearFilters
+const setPage = directory.setPage
 
-onUnmounted(() => {
-  window.clearTimeout(searchTimeout)
-})
+onMounted(directory.fetchItems)
+onUnmounted(directory.dispose)
 
 const isUpdatingFavorite = (tutorId) => updatingFavorites.value.has(tutorId)
 
 const setTutorFavorite = (tutorId, hasFavorite) => {
-  tutors.value = tutors.value.map((tutor) => (
-    tutor.id === tutorId ? { ...tutor, has_favorite: hasFavorite } : tutor
-  ))
+  directory.applyFavoriteState(tutorId, hasFavorite)
 }
 
 const toggleFavorite = async (tutor) => {
