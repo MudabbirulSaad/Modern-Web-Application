@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import BaseCard from './common/BaseCard.vue'
 import { getRatingFromArrowKey, reviewStarOptions } from './reviewStars'
-import { shouldShowReviewActions } from './reviewActions'
+import { shouldAllowReviewUpvote, shouldShowReviewActions } from './reviewActions'
 import { useUserStore } from '../store/userStore'
 
 const props = defineProps({
@@ -188,7 +188,7 @@ const deleteReview = async (review) => {
 }
 
 const toggleUpvote = async (review) => {
-  if (!canReview.value) {
+  if (!shouldAllowReviewUpvote(review, canReview.value)) {
     return
   }
 
@@ -415,7 +415,7 @@ watch(
             class="btn btn-sm"
             :class="review.has_upvoted ? 'btn-directory-action' : 'btn-directory-action-secondary'"
             type="button"
-            :disabled="!canReview || upvotingId === review.id"
+            :disabled="!shouldAllowReviewUpvote(review, canReview) || upvotingId === review.id"
             :aria-pressed="review.has_upvoted ? 'true' : 'false'"
             @click="toggleUpvote(review)"
           >

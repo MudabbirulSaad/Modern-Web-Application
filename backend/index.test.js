@@ -1815,7 +1815,7 @@ describe('Review endpoints', () => {
     spy.mockRestore();
   });
 
-  it('should create a sanitized review when the requester is a student', async () => {
+  it('should strip HTML tags when creating a review', async () => {
     const createdReview = {
       id: 12,
       user_id: 7,
@@ -1823,13 +1823,55 @@ describe('Review endpoints', () => {
       entity_type: 'course',
       entity_id: 3,
       rating: 4,
-      comment: '&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;Clear lectures.',
+      comment: 'Clear lectures.',
       upvotes: 0,
       created_at: '2026-05-18T00:00:00.000Z'
     };
     const mockConn = {
       query: jest.fn()
         .mockResolvedValueOnce({ insertId: 12 })
+        .mockResolvedValueOnce([createdReview]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/reviews')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'course',
+        entity_id: 3,
+        rating: 4,
+        comment: '<strong>Clear lectures.</strong>'
+      });
+
+    expect(res.statusCode).toEqual(201);
+    expect(res.body).toEqual({ status: 'ok', data: { ...createdReview, can_manage: true } });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      'INSERT INTO Reviews (user_id, entity_type, entity_id, rating, comment) VALUES (?, ?, ?, ?, ?)',
+      [7, 'course', 3, 4, 'Clear lectures.']
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should remove script tag content when creating a review', async () => {
+    const createdReview = {
+      id: 13,
+      user_id: 7,
+      username: 'studentone',
+      entity_type: 'course',
+      entity_id: 3,
+      rating: 4,
+      comment: 'Clear lectures.',
+      upvotes: 0,
+      created_at: '2026-05-18T00:00:00.000Z'
+    };
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce({ insertId: 13 })
         .mockResolvedValueOnce([createdReview]),
       release: jest.fn()
     };
@@ -1850,9 +1892,86 @@ describe('Review endpoints', () => {
     expect(mockConn.query).toHaveBeenNthCalledWith(
       1,
       'INSERT INTO Reviews (user_id, entity_type, entity_id, rating, comment) VALUES (?, ?, ?, ?, ?)',
-      [7, 'course', 3, 4, '&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;Clear lectures.']
+      [7, 'course', 3, 4, 'Clear lectures.']
     );
     expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should remove dangerous attributes with their HTML tags when creating a review', async () => {
+    const createdReview = {
+      id: 14,
+      user_id: 7,
+      username: 'studentone',
+      entity_type: 'course',
+      entity_id: 3,
+      rating: 5,
+      comment: 'Helpful examples.',
+      upvotes: 0,
+      created_at: '2026-05-18T00:00:00.000Z'
+    };
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce({ insertId: 14 })
+        .mockResolvedValueOnce([createdReview]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/reviews')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'course',
+        entity_id: 3,
+        rating: 5,
+        comment: '<img src=x onerror=alert(1)>Helpful examples.'
+      });
+
+    expect(res.statusCode).toEqual(201);
+    expect(res.body).toEqual({ status: 'ok', data: { ...createdReview, can_manage: true } });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      'INSERT INTO Reviews (user_id, entity_type, entity_id, rating, comment) VALUES (?, ?, ?, ?, ?)',
+      [7, 'course', 3, 5, 'Helpful examples.']
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should reject review comments that are empty after stripping HTML', async () => {
+    const res = await request(app)
+      .post('/api/reviews')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'course',
+        entity_id: 3,
+        rating: 4,
+        comment: '<strong> </strong><script>alert("x")</script>'
+      });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'Rating from 1 to 5 and comment are required' });
+  });
+
+  it('should reject review creation when the sanitized comment exceeds the frontend length limit', async () => {
+    const spy = jest.spyOn(pool, 'getConnection');
+
+    const res = await request(app)
+      .post('/api/reviews')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'course',
+        entity_id: 3,
+        rating: 4,
+        comment: 'a'.repeat(1001)
+      });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'Review comment must be 1000 characters or fewer' });
+    expect(spy).not.toHaveBeenCalled();
 
     spy.mockRestore();
   });
@@ -1908,6 +2027,64 @@ describe('Review endpoints', () => {
       [5, 'Updated after the second lecture.', '12', 7]
     );
     expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should strip unsafe HTML when updating a review', async () => {
+    const updatedReview = {
+      id: 12,
+      user_id: 7,
+      username: 'studentone',
+      entity_type: 'course',
+      entity_id: 3,
+      rating: 5,
+      comment: 'Updated after the second lecture.',
+      upvotes: 0,
+      created_at: '2026-05-18T00:00:00.000Z'
+    };
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce([updatedReview]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/reviews/12')
+      .set('Cookie', studentCookie())
+      .send({
+        rating: 5,
+        comment: '<script>alert("x")</script><strong>Updated after the second lecture.</strong>'
+      });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: { ...updatedReview, can_manage: true } });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      'UPDATE Reviews SET rating = ?, comment = ? WHERE id = ? AND user_id = ?',
+      [5, 'Updated after the second lecture.', '12', 7]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should reject review updates when the sanitized comment exceeds the frontend length limit', async () => {
+    const spy = jest.spyOn(pool, 'getConnection');
+
+    const res = await request(app)
+      .put('/api/reviews/12')
+      .set('Cookie', studentCookie())
+      .send({
+        rating: 5,
+        comment: 'a'.repeat(1001)
+      });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'Review comment must be 1000 characters or fewer' });
+    expect(spy).not.toHaveBeenCalled();
 
     spy.mockRestore();
   });
@@ -2053,6 +2230,31 @@ describe('Review endpoints', () => {
       [12]
     );
     expect(mockConn.commit).toHaveBeenCalled();
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should reject upvotes on the requester own review', async () => {
+    const mockConn = {
+      beginTransaction: jest.fn().mockResolvedValue(),
+      commit: jest.fn().mockResolvedValue(),
+      rollback: jest.fn().mockResolvedValue(),
+      query: jest.fn()
+        .mockResolvedValueOnce([{ id: 12, user_id: 7 }]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/reviews/12/upvote')
+      .set('Cookie', studentCookie());
+
+    expect(res.statusCode).toEqual(403);
+    expect(res.body).toEqual({ status: 'error', message: 'Cannot upvote your own review' });
+    expect(mockConn.query).toHaveBeenCalledTimes(1);
+    expect(mockConn.rollback).toHaveBeenCalled();
+    expect(mockConn.commit).not.toHaveBeenCalled();
     expect(mockConn.release).toHaveBeenCalled();
 
     spy.mockRestore();

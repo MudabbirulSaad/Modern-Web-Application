@@ -2,6 +2,7 @@ import express from 'express';
 import pool from '../db.js';
 import { decodeAuthCookie, requireStudent } from '../middleware/auth.js';
 import {
+  REVIEW_COMMENT_MAX_LENGTH,
   normalizeReview,
   readReviewPayload,
   sanitizeReviewComment,
@@ -89,6 +90,11 @@ router.post('/reviews', requireStudent, async (req, res) => {
     return;
   }
 
+  if (comment.length > REVIEW_COMMENT_MAX_LENGTH) {
+    res.status(400).json({ status: 'error', message: 'Review comment must be 1000 characters or fewer' });
+    return;
+  }
+
   let conn;
   try {
     conn = await pool.getConnection();
@@ -119,6 +125,11 @@ router.put('/reviews/:id', requireStudent, async (req, res) => {
 
   if (!Number.isInteger(rating) || rating < 1 || rating > 5 || !comment) {
     res.status(400).json({ status: 'error', message: 'Rating from 1 to 5 and comment are required' });
+    return;
+  }
+
+  if (comment.length > REVIEW_COMMENT_MAX_LENGTH) {
+    res.status(400).json({ status: 'error', message: 'Review comment must be 1000 characters or fewer' });
     return;
   }
 
@@ -191,13 +202,19 @@ router.post('/reviews/:id/upvote', requireStudent, async (req, res) => {
     await conn.beginTransaction();
 
     const reviewRows = await conn.query(
-      'SELECT id FROM Reviews WHERE id = ? LIMIT 1',
+      'SELECT id, user_id FROM Reviews WHERE id = ? LIMIT 1',
       [reviewId]
     );
 
     if (reviewRows.length === 0) {
       await conn.rollback();
       res.status(404).json({ status: 'error', message: 'Review not found' });
+      return;
+    }
+
+    if (Number(reviewRows[0].user_id) === userId) {
+      await conn.rollback();
+      res.status(403).json({ status: 'error', message: 'Cannot upvote your own review' });
       return;
     }
 

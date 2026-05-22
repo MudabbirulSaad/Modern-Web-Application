@@ -254,13 +254,12 @@ const insertCourseTutors = async (conn, courseId, tutorIds) => {
   );
 };
 
+const REVIEW_COMMENT_MAX_LENGTH = 1000;
+
 const sanitizeReviewComment = (comment) => String(comment || '')
-  .trim()
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;')
-  .replace(/'/g, '&#39;');
+  .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+  .replace(/<[^>]*>/g, '')
+  .trim();
 
 const readReviewPayload = (body) => ({
   entityType: String(body.entity_type || '').trim().toLowerCase(),
@@ -423,6 +422,7 @@ export {
   buildCourseFilters,
   selectCourseById,
   insertCourseTutors,
+  REVIEW_COMMENT_MAX_LENGTH,
   sanitizeReviewComment,
   readReviewPayload,
   normalizeReview,
