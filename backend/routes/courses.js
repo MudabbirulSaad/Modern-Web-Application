@@ -3,9 +3,11 @@ import pool from '../db.js';
 import { decodeAuthCookie, requireAdmin } from '../middleware/auth.js';
 import {
   COURSE_DUPLICATE_MESSAGE,
+  buildMissingTutorAssignmentsMessage,
   buildCourseFilters,
   buildDirectoryOrderClause,
   buildReviewStatsJoin,
+  findMissingTutorIds,
   hasDuplicateCourse,
   insertCourseTutors,
   isCourseDuplicateError,
@@ -154,6 +156,16 @@ router.post('/', requireAdmin, async (req, res) => {
       return;
     }
 
+    const missingTutorIds = await findMissingTutorIds(conn, tutorIds);
+    if (missingTutorIds.length > 0) {
+      await conn.rollback();
+      res.status(400).json({
+        status: 'error',
+        message: buildMissingTutorAssignmentsMessage(missingTutorIds)
+      });
+      return;
+    }
+
     const result = await conn.query(
       'INSERT INTO Courses (title, department, description) VALUES (?, ?, ?)',
       [title, department, description]
@@ -196,6 +208,16 @@ router.put('/:id', requireAdmin, async (req, res) => {
     if (await hasDuplicateCourse(conn, { title, department }, req.params.id)) {
       await conn.rollback();
       res.status(400).json({ status: 'error', message: COURSE_DUPLICATE_MESSAGE });
+      return;
+    }
+
+    const missingTutorIds = await findMissingTutorIds(conn, tutorIds);
+    if (missingTutorIds.length > 0) {
+      await conn.rollback();
+      res.status(400).json({
+        status: 'error',
+        message: buildMissingTutorAssignmentsMessage(missingTutorIds)
+      });
       return;
     }
 

@@ -2,13 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useAdminManagement } from '../admin/useAdminManagement.js'
 import BaseCard from '../components/common/BaseCard.vue'
-import {
-  addTutorAssignment,
-  countTutorAssignmentMatches,
-  findSelectedTutors,
-  findTutorAssignmentResults,
-  removeTutorAssignment
-} from './adminTutorAssignment.js'
+import { createTutorAssignmentState } from './adminTutorAssignment.js'
 
 const activeAdminTab = ref('courses')
 const tutorSearch = ref('')
@@ -47,20 +41,17 @@ const isEditingTutor = computed(() => editingTutorId.value !== null)
 const isEditingCourse = computed(() => editingCourseId.value !== null)
 const hasTutors = computed(() => tutors.value.length > 0)
 const hasCourses = computed(() => courses.value.length > 0)
-const selectedCourseTutors = computed(() => findSelectedTutors(tutors.value, courseForm.tutorIds))
 const tutorSearchTerm = computed(() => tutorSearch.value.trim())
 const hasTutorSearch = computed(() => tutorSearchTerm.value.length > 0)
-const availableCourseTutors = computed(() => (
-  findTutorAssignmentResults(
-    tutors.value,
-    courseForm.tutorIds,
-    tutorSearch.value,
-    TUTOR_SEARCH_RESULT_LIMIT
-  )
-))
-const tutorSearchResultCount = computed(() => (
-  countTutorAssignmentMatches(tutors.value, courseForm.tutorIds, tutorSearch.value)
-))
+const courseTutorAssignment = computed(() => createTutorAssignmentState({
+  tutors: tutors.value,
+  selectedTutorIds: courseForm.tutorIds,
+  searchTerm: tutorSearch.value,
+  limit: TUTOR_SEARCH_RESULT_LIMIT
+}))
+const selectedCourseTutors = computed(() => courseTutorAssignment.value.visibleSelectedTutors)
+const availableCourseTutors = computed(() => courseTutorAssignment.value.searchResults)
+const tutorSearchResultCount = computed(() => courseTutorAssignment.value.searchResultCount)
 const hiddenTutorResultCount = computed(() => (
   Math.max(tutorSearchResultCount.value - availableCourseTutors.value.length, 0)
 ))
@@ -90,11 +81,11 @@ const editCourse = async (course) => {
 }
 
 const addCourseTutor = (tutor) => {
-  courseForm.tutorIds = addTutorAssignment(courseForm.tutorIds, tutor.id)
+  courseForm.tutorIds = courseTutorAssignment.value.add(tutor.id)
 }
 
 const removeCourseTutor = (tutor) => {
-  courseForm.tutorIds = removeTutorAssignment(courseForm.tutorIds, tutor.id)
+  courseForm.tutorIds = courseTutorAssignment.value.remove(tutor.id)
 }
 
 onMounted(() => {

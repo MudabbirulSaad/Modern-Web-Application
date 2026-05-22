@@ -1069,6 +1069,7 @@ describe('Protected course management endpoints', () => {
       rollback: jest.fn().mockResolvedValue(),
       query: jest.fn()
         .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: 1 }, { id: 3 }])
         .mockResolvedValueOnce({ insertId: 4 })
         .mockResolvedValueOnce({ affectedRows: 2 })
         .mockResolvedValueOnce([createdCourse])
@@ -1097,11 +1098,16 @@ describe('Protected course management endpoints', () => {
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(
       2,
+      'SELECT id FROM Tutors WHERE id IN (?, ?)',
+      [1, 3]
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      3,
       'INSERT INTO Courses (title, department, description) VALUES (?, ?, ?)',
       ['COS10005 Web Development', 'Computer Science', 'Build accessible web applications.']
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(
-      3,
+      4,
       'INSERT INTO Course_Tutors (course_id, tutor_id) VALUES (?, ?), (?, ?)',
       [4, 1, 4, 3]
     );
@@ -1137,6 +1143,51 @@ describe('Protected course management endpoints', () => {
     expect(mockConn.query).toHaveBeenCalledWith(
       'SELECT id FROM Courses WHERE LOWER(TRIM(title)) = ? AND LOWER(TRIM(department)) = ? LIMIT 1',
       ['cos10005 web development', 'computer science']
+    );
+    expect(mockConn.rollback).toHaveBeenCalled();
+    expect(mockConn.commit).not.toHaveBeenCalled();
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return a validation error when creating a course with a nonexistent tutor assignment', async () => {
+    const mockConn = {
+      beginTransaction: jest.fn().mockResolvedValue(),
+      commit: jest.fn().mockResolvedValue(),
+      rollback: jest.fn().mockResolvedValue(),
+      query: jest.fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: 1 }]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/courses')
+      .set('Cookie', adminCookie())
+      .send({
+        title: 'COS10005 Web Development',
+        department: 'Computer Science',
+        description: 'Build accessible web applications.',
+        tutorIds: [1, 999]
+      });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'Assigned tutor ids do not exist: 999' });
+    expect(mockConn.query).toHaveBeenCalledTimes(2);
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      'SELECT id FROM Tutors WHERE id IN (?, ?)',
+      [1, 999]
+    );
+    expect(mockConn.query).not.toHaveBeenCalledWith(
+      'INSERT INTO Courses (title, department, description) VALUES (?, ?, ?)',
+      expect.any(Array)
+    );
+    expect(mockConn.query).not.toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO Course_Tutors'),
+      expect.any(Array)
     );
     expect(mockConn.rollback).toHaveBeenCalled();
     expect(mockConn.commit).not.toHaveBeenCalled();
@@ -1183,6 +1234,7 @@ describe('Protected course management endpoints', () => {
       rollback: jest.fn().mockResolvedValue(),
       query: jest.fn()
         .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: 2 }])
         .mockResolvedValueOnce({ affectedRows: 1 })
         .mockResolvedValueOnce({ affectedRows: 2 })
         .mockResolvedValueOnce({ affectedRows: 1 })
@@ -1211,16 +1263,21 @@ describe('Protected course management endpoints', () => {
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(
       2,
+      'SELECT id FROM Tutors WHERE id IN (?)',
+      [2]
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      3,
       'UPDATE Courses SET title = ?, department = ?, description = ? WHERE id = ?',
       ['COS10005 Web Development', 'Computer Science', 'Build accessible and responsive web applications.', '4']
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(
-      3,
+      4,
       'DELETE FROM Course_Tutors WHERE course_id = ?',
       ['4']
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(
-      4,
+      5,
       'INSERT INTO Course_Tutors (course_id, tutor_id) VALUES (?, ?)',
       ['4', 2]
     );
@@ -1287,6 +1344,7 @@ describe('Protected course management endpoints', () => {
       rollback: jest.fn().mockResolvedValue(),
       query: jest.fn()
         .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: 2 }])
         .mockResolvedValueOnce({ affectedRows: 1 })
         .mockResolvedValueOnce({ affectedRows: 2 })
         .mockResolvedValueOnce({ affectedRows: 1 })
@@ -1309,11 +1367,56 @@ describe('Protected course management endpoints', () => {
     expect(res.statusCode).toEqual(200);
     expect(res.body).toEqual({ status: 'ok', data: { ...updatedCourse, tutors: assignedTutors } });
     expect(mockConn.query).toHaveBeenNthCalledWith(
-      4,
+      5,
       'INSERT INTO Course_Tutors (course_id, tutor_id) VALUES (?, ?)',
       ['4', 2]
     );
     expect(mockConn.commit).toHaveBeenCalled();
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should return a validation error when updating a course with a nonexistent tutor assignment', async () => {
+    const mockConn = {
+      beginTransaction: jest.fn().mockResolvedValue(),
+      commit: jest.fn().mockResolvedValue(),
+      rollback: jest.fn().mockResolvedValue(),
+      query: jest.fn()
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ id: 2 }]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .put('/api/courses/4')
+      .set('Cookie', adminCookie())
+      .send({
+        title: 'COS10005 Web Development',
+        department: 'Computer Science',
+        description: 'Build accessible and responsive web applications.',
+        tutorIds: [2, 404]
+      });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'Assigned tutor ids do not exist: 404' });
+    expect(mockConn.query).toHaveBeenCalledTimes(2);
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      'SELECT id FROM Tutors WHERE id IN (?, ?)',
+      [2, 404]
+    );
+    expect(mockConn.query).not.toHaveBeenCalledWith(
+      'DELETE FROM Course_Tutors WHERE course_id = ?',
+      expect.any(Array)
+    );
+    expect(mockConn.query).not.toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO Course_Tutors'),
+      expect.any(Array)
+    );
+    expect(mockConn.rollback).toHaveBeenCalled();
+    expect(mockConn.commit).not.toHaveBeenCalled();
     expect(mockConn.release).toHaveBeenCalled();
 
     spy.mockRestore();

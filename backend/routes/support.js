@@ -50,6 +50,10 @@ const normalizeCourseIdentity = (value) => String(value || '').trim().toLowerCas
 
 const COURSE_DUPLICATE_MESSAGE = 'A course with this title and department already exists';
 
+const buildMissingTutorAssignmentsMessage = (missingTutorIds) => (
+  `Assigned tutor ids do not exist: ${missingTutorIds.join(', ')}`
+);
+
 const isCourseDuplicateError = (err) => (
   Number(err?.errno) === 1062
   || err?.code === 'ER_DUP_ENTRY'
@@ -254,6 +258,21 @@ const insertCourseTutors = async (conn, courseId, tutorIds) => {
   );
 };
 
+const findMissingTutorIds = async (conn, tutorIds) => {
+  if (tutorIds.length === 0) {
+    return [];
+  }
+
+  const placeholders = tutorIds.map(() => '?').join(', ');
+  const rows = await conn.query(
+    `SELECT id FROM Tutors WHERE id IN (${placeholders})`,
+    tutorIds
+  );
+  const existingIds = new Set(rows.map((row) => Number(row.id)));
+
+  return tutorIds.filter((tutorId) => !existingIds.has(Number(tutorId)));
+};
+
 const REVIEW_COMMENT_MAX_LENGTH = 1000;
 
 const sanitizeReviewComment = (comment) => String(comment || '')
@@ -409,6 +428,7 @@ export {
   hasDuplicateTutor,
   readTutorPayload,
   COURSE_DUPLICATE_MESSAGE,
+  buildMissingTutorAssignmentsMessage,
   isCourseDuplicateError,
   hasDuplicateCourse,
   readCoursePayload,
@@ -422,6 +442,7 @@ export {
   buildCourseFilters,
   selectCourseById,
   insertCourseTutors,
+  findMissingTutorIds,
   REVIEW_COMMENT_MAX_LENGTH,
   sanitizeReviewComment,
   readReviewPayload,

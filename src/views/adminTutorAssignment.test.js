@@ -1,6 +1,7 @@
 import {
   addTutorAssignment,
   countTutorAssignmentMatches,
+  createTutorAssignmentState,
   findSelectedTutors,
   findTutorAssignmentResults,
   removeTutorAssignment
@@ -14,6 +15,24 @@ const tutors = [
 ]
 
 describe('admin tutor assignment helpers', () => {
+  it('normalizes duplicate and string tutor ids for assignment payloads', () => {
+    const assignment = createTutorAssignmentState({
+      tutors,
+      selectedTutorIds: [1, '2', 2, 'not-a-number', 0, 99],
+      searchTerm: 'computer'
+    })
+
+    expect(assignment.selectedIds).toEqual([1, 2])
+    expect(assignment.visibleSelectedTutors).toEqual([
+      { id: 1, name: 'Dr Maya Chen', department: 'Computer Science' },
+      { id: 2, name: 'Prof Liam Patel', department: 'Information Systems' }
+    ])
+    expect(assignment.searchResults).toEqual([
+      { id: 3, name: 'Dr Zoe Nguyen', department: 'Computer Science' }
+    ])
+    expect(assignment.payloadTutorIds).toEqual([1, 2])
+  })
+
   it('searches available tutors by name or department while excluding selected tutors', () => {
     expect(findTutorAssignmentResults(tutors, [1], 'computer')).toEqual([
       { id: 3, name: 'Dr Zoe Nguyen', department: 'Computer Science' }

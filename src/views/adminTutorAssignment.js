@@ -2,12 +2,25 @@ const normalizeSearch = (value) => String(value || '').trim().toLowerCase()
 
 const readTutorId = (tutor) => Number(tutor?.id)
 
-export const findTutorAssignmentResults = (tutors, selectedTutorIds, searchTerm, limit = 8) => {
-  const selectedIds = new Set(
+const readValidTutorIds = (tutors) => new Set(
+  (Array.isArray(tutors) ? tutors : [])
+    .map((tutor) => readTutorId(tutor))
+    .filter((id) => Number.isInteger(id) && id > 0)
+)
+
+const normalizeTutorIds = (selectedTutorIds, tutors = null) => {
+  const validTutorIds = Array.isArray(tutors) && tutors.length > 0 ? readValidTutorIds(tutors) : null
+
+  return [...new Set(
     (Array.isArray(selectedTutorIds) ? selectedTutorIds : [])
       .map((id) => Number(id))
       .filter((id) => Number.isInteger(id) && id > 0)
-  )
+      .filter((id) => !validTutorIds || validTutorIds.has(id))
+  )]
+}
+
+export const findTutorAssignmentResults = (tutors, selectedTutorIds, searchTerm, limit = 8) => {
+  const selectedIds = new Set(normalizeTutorIds(selectedTutorIds))
   const query = normalizeSearch(searchTerm)
 
   if (!query) {
@@ -35,11 +48,7 @@ export const findSelectedTutors = (tutors, selectedTutorIds) => {
       .map((tutor) => [readTutorId(tutor), tutor])
       .filter(([id]) => Number.isInteger(id) && id > 0)
   )
-  const selectedIds = [...new Set(
-    (Array.isArray(selectedTutorIds) ? selectedTutorIds : [])
-      .map((id) => Number(id))
-      .filter((id) => Number.isInteger(id) && id > 0)
-  )]
+  const selectedIds = normalizeTutorIds(selectedTutorIds)
 
   return selectedIds
     .map((id) => tutorById.get(id))
@@ -47,9 +56,7 @@ export const findSelectedTutors = (tutors, selectedTutorIds) => {
 }
 
 export const addTutorAssignment = (selectedTutorIds, tutorId) => {
-  const nextIds = (Array.isArray(selectedTutorIds) ? selectedTutorIds : [])
-    .map((id) => Number(id))
-    .filter((id) => Number.isInteger(id) && id > 0)
+  const nextIds = normalizeTutorIds(selectedTutorIds)
   const nextTutorId = Number(tutorId)
 
   if (!Number.isInteger(nextTutorId) || nextTutorId <= 0 || nextIds.includes(nextTutorId)) {
@@ -62,7 +69,25 @@ export const addTutorAssignment = (selectedTutorIds, tutorId) => {
 export const removeTutorAssignment = (selectedTutorIds, tutorId) => {
   const removedTutorId = Number(tutorId)
 
-  return (Array.isArray(selectedTutorIds) ? selectedTutorIds : [])
-    .map((id) => Number(id))
-    .filter((id) => Number.isInteger(id) && id > 0 && id !== removedTutorId)
+  return normalizeTutorIds(selectedTutorIds)
+    .filter((id) => id !== removedTutorId)
+}
+
+export const createTutorAssignmentState = ({
+  tutors,
+  selectedTutorIds,
+  searchTerm = '',
+  limit = 8
+}) => {
+  const selectedIds = normalizeTutorIds(selectedTutorIds, tutors)
+
+  return {
+    selectedIds,
+    visibleSelectedTutors: findSelectedTutors(tutors, selectedIds),
+    searchResults: findTutorAssignmentResults(tutors, selectedIds, searchTerm, limit),
+    searchResultCount: countTutorAssignmentMatches(tutors, selectedIds, searchTerm),
+    payloadTutorIds: selectedIds,
+    add: (tutorId) => normalizeTutorIds(addTutorAssignment(selectedIds, tutorId), tutors),
+    remove: (tutorId) => removeTutorAssignment(selectedIds, tutorId)
+  }
 }

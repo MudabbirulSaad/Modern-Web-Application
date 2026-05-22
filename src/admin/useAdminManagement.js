@@ -1,5 +1,6 @@
 import { reactive, ref } from 'vue'
 import { adminApi as defaultAdminApi } from './adminApi.js'
+import { createTutorAssignmentState } from '../views/adminTutorAssignment.js'
 
 const readCourseTutorIds = (course) => {
   if (Array.isArray(course?.tutors)) {
@@ -175,11 +176,15 @@ export const useAdminManagement = ({
     courseSaving.value = true
 
     try {
+      const tutorAssignment = createTutorAssignmentState({
+        tutors: tutors.value,
+        selectedTutorIds: courseForm.tutorIds
+      })
       const coursePayload = {
         title: courseForm.title,
         department: courseForm.department,
         description: courseForm.description,
-        tutorIds: courseForm.tutorIds
+        tutorIds: tutorAssignment.payloadTutorIds
       }
 
       if (editingCourseId.value !== null) {

@@ -84,6 +84,29 @@ describe('admin management workflow', () => {
     expect(workflow.courseSaving.value).toBe(false)
   })
 
+  it('normalizes course tutor assignments before saving a course', async () => {
+    const { adminApi, workflow } = createWorkflow()
+
+    workflow.tutors.value = [
+      { id: 1, name: 'Dr Maya Chen', department: 'Computer Science' },
+      { id: 2, name: 'Prof Liam Patel', department: 'Information Systems' }
+    ]
+    workflow.courseForm.title = 'COS10005 Web Development'
+    workflow.courseForm.department = 'Computer Science'
+    workflow.courseForm.description = 'Builds modern web applications.'
+    workflow.courseForm.tutorIds = [1, '2', 2, 999, 'invalid', 0]
+
+    const saved = await workflow.saveCourse()
+
+    expect(saved).toBe(true)
+    expect(adminApi.createCourse).toHaveBeenCalledWith({
+      title: 'COS10005 Web Development',
+      department: 'Computer Science',
+      description: 'Builds modern web applications.',
+      tutorIds: [1, 2]
+    })
+  })
+
   it('deletes a tutor, clears matching edit state, and reloads tutors and courses', async () => {
     const { adminApi, reloadTutors, reloadCourses, workflow } = createWorkflow({
       options: {
