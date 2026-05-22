@@ -1,9 +1,10 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, watch } from 'vue'
 import BaseCard from './common/BaseCard.vue'
-import { getRatingFromArrowKey, reviewStarOptions } from './reviewStars'
 import { shouldAllowReviewUpvote, shouldShowReviewActions } from './reviewActions'
 import { useUserStore } from '../store/userStore'
+import { useReviewWorkflow } from '../reviews/useReviewWorkflow'
+import ReviewRatingInput from '../reviews/ReviewRatingInput.vue'
 
 const props = defineProps({
   entityType: {
@@ -17,208 +18,45 @@ const props = defineProps({
 })
 
 const userStore = useUserStore()
-const reviews = ref([])
-const loading = ref(false)
-const error = ref('')
-const submitError = ref('')
-const actionError = ref('')
-const submitting = ref(false)
-const updating = ref(false)
-const deletingId = ref(null)
-const upvotingId = ref(null)
-const editingReviewId = ref(null)
-const editRating = ref(5)
-const editComment = ref('')
-const rating = ref(5)
-const comment = ref('')
-
-const hasReviews = computed(() => reviews.value.length > 0)
 const canReview = computed(() => userStore.isStudent)
 const entityLabel = computed(() => props.entityType === 'course' ? 'course' : 'tutor')
 const reviewLimitText = computed(() => canReview.value ? 'All reviews' : 'Top reviews')
+const workflow = useReviewWorkflow({
+  entityType: () => props.entityType,
+  entityId: () => props.entityId,
+  canReview: () => canReview.value
+})
+const {
+  reviews,
+  loading,
+  error,
+  submitError,
+  actionError,
+  submitting,
+  updating,
+  deletingId,
+  upvotingId,
+  editingReviewId,
+  editRating,
+  editComment,
+  rating,
+  comment,
+  loadReviews,
+  createReview,
+  startEditing,
+  cancelEditing,
+  updateReview,
+  deleteReview,
+  toggleUpvote
+} = workflow
 
+const hasReviews = computed(() => reviews.value.length > 0)
 const upvoteLabel = (review) => `${review.upvotes} helpful vote${Number(review.upvotes) === 1 ? '' : 's'}`
-
-const updateNewRatingFromKey = (event) => {
-  const nextRating = getRatingFromArrowKey(event.key, rating.value)
-
-  if (nextRating !== Number(rating.value)) {
-    event.preventDefault()
-    rating.value = nextRating
-  }
-}
-
-const updateEditRatingFromKey = (event) => {
-  const nextRating = getRatingFromArrowKey(event.key, editRating.value)
-
-  if (nextRating !== Number(editRating.value)) {
-    event.preventDefault()
-    editRating.value = nextRating
-  }
-}
-
-const fetchReviews = async () => {
-  loading.value = true
-  error.value = ''
-
-  try {
-    const params = new URLSearchParams({
-      entity_type: props.entityType,
-      entity_id: String(props.entityId)
-    })
-    const response = await fetch(`/api/reviews?${params.toString()}`, {
-      credentials: 'include'
-    })
-    const payload = await response.json()
-
-    if (!response.ok) {
-      throw new Error(payload.message || 'Unable to load reviews')
-    }
-
-    reviews.value = payload.data || []
-  } catch (err) {
-    error.value = 'Reviews are unavailable right now. Please try again shortly.'
-  } finally {
-    loading.value = false
-  }
-}
-
-const startEditing = (review) => {
-  actionError.value = ''
-  editingReviewId.value = review.id
-  editRating.value = review.rating
-  editComment.value = review.comment
-}
-
-const cancelEditing = () => {
-  editingReviewId.value = null
-  editRating.value = 5
-  editComment.value = ''
-}
-
-const submitReview = async () => {
-  submitError.value = ''
-  submitting.value = true
-
-  try {
-    const response = await fetch('/api/reviews', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        entity_type: props.entityType,
-        entity_id: Number(props.entityId),
-        rating: Number(rating.value),
-        comment: comment.value
-      })
-    })
-    const payload = await response.json()
-
-    if (!response.ok) {
-      throw new Error(payload.message || 'Unable to submit review')
-    }
-
-    reviews.value = [payload.data, ...reviews.value]
-    rating.value = 5
-    comment.value = ''
-  } catch (err) {
-    submitError.value = err.message || 'Review could not be submitted. Please try again.'
-  } finally {
-    submitting.value = false
-  }
-}
-
-const updateReview = async (review) => {
-  actionError.value = ''
-  updating.value = true
-
-  try {
-    const response = await fetch(`/api/reviews/${review.id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        rating: Number(editRating.value),
-        comment: editComment.value
-      })
-    })
-    const payload = await response.json()
-
-    if (!response.ok) {
-      throw new Error(payload.message || 'Unable to update review')
-    }
-
-    cancelEditing()
-    await fetchReviews()
-  } catch (err) {
-    actionError.value = err.message || 'Review could not be updated. Please try again.'
-  } finally {
-    updating.value = false
-  }
-}
-
-const deleteReview = async (review) => {
-  actionError.value = ''
-  deletingId.value = review.id
-
-  try {
-    const response = await fetch(`/api/reviews/${review.id}`, {
-      method: 'DELETE',
-      credentials: 'include'
-    })
-    const payload = await response.json()
-
-    if (!response.ok) {
-      throw new Error(payload.message || 'Unable to delete review')
-    }
-
-    if (editingReviewId.value === review.id) {
-      cancelEditing()
-    }
-    await fetchReviews()
-  } catch (err) {
-    actionError.value = err.message || 'Review could not be deleted. Please try again.'
-  } finally {
-    deletingId.value = null
-  }
-}
-
-const toggleUpvote = async (review) => {
-  if (!shouldAllowReviewUpvote(review, canReview.value)) {
-    return
-  }
-
-  actionError.value = ''
-  upvotingId.value = review.id
-
-  try {
-    const response = await fetch(`/api/reviews/${review.id}/upvote`, {
-      method: 'POST',
-      credentials: 'include'
-    })
-    const payload = await response.json()
-
-    if (!response.ok) {
-      throw new Error(payload.message || 'Unable to update upvote')
-    }
-
-    reviews.value = reviews.value.map((currentReview) => (
-      currentReview.id === review.id ? payload.data : currentReview
-    ))
-  } catch (err) {
-    actionError.value = err.message || 'Upvote could not be updated. Please try again.'
-  } finally {
-    upvotingId.value = null
-  }
-}
+const submitReview = createReview
 
 watch(
   () => [props.entityType, props.entityId, userStore.isStudent],
-  fetchReviews,
+  loadReviews,
   { immediate: true }
 )
 </script>
@@ -236,32 +74,13 @@ watch(
       <form class="vstack gap-3" @submit.prevent="submitReview">
         <div>
           <p :id="`${entityType}-review-rating-label`" class="form-label mb-2">Rating</p>
-          <div
-            class="review-star-input"
-            role="radiogroup"
-            :aria-labelledby="`${entityType}-review-rating-label`"
-          >
-            <template v-for="option in reviewStarOptions(rating)" :key="option.value">
-              <input
-                :id="`${entityType}-review-rating-${option.value}`"
-                v-model="rating"
-                class="btn-check"
-                type="radio"
-                :name="`${entityType}-review-rating`"
-                :value="option.value"
-                required
-                @keydown="updateNewRatingFromKey"
-              >
-              <label
-                class="review-star-button"
-                :class="{ 'is-filled': option.filled }"
-                :for="`${entityType}-review-rating-${option.value}`"
-              >
-                <span aria-hidden="true">★</span>
-                <span class="visually-hidden">{{ option.label }}</span>
-              </label>
-            </template>
-          </div>
+          <ReviewRatingInput
+            v-model="rating"
+            :id-prefix="`${entityType}-review-rating`"
+            :name="`${entityType}-review-rating`"
+            :labelledby="`${entityType}-review-rating-label`"
+            :disabled="submitting"
+          />
         </div>
 
         <div>
@@ -357,32 +176,13 @@ watch(
         >
           <div>
             <p :id="`${entityType}-edit-review-rating-label-${review.id}`" class="form-label mb-2">Rating</p>
-            <div
-              class="review-star-input"
-              role="radiogroup"
-              :aria-labelledby="`${entityType}-edit-review-rating-label-${review.id}`"
-            >
-              <template v-for="option in reviewStarOptions(editRating)" :key="option.value">
-                <input
-                  :id="`${entityType}-edit-review-rating-${review.id}-${option.value}`"
-                  v-model="editRating"
-                  class="btn-check"
-                  type="radio"
-                  :name="`${entityType}-edit-review-rating-${review.id}`"
-                  :value="option.value"
-                  required
-                  @keydown="updateEditRatingFromKey"
-                >
-                <label
-                  class="review-star-button"
-                  :class="{ 'is-filled': option.filled }"
-                  :for="`${entityType}-edit-review-rating-${review.id}-${option.value}`"
-                >
-                  <span aria-hidden="true">★</span>
-                  <span class="visually-hidden">{{ option.label }}</span>
-                </label>
-              </template>
-            </div>
+            <ReviewRatingInput
+              v-model="editRating"
+              :id-prefix="`${entityType}-edit-review-rating-${review.id}`"
+              :name="`${entityType}-edit-review-rating-${review.id}`"
+              :labelledby="`${entityType}-edit-review-rating-label-${review.id}`"
+              :disabled="updating"
+            />
           </div>
 
           <div>
@@ -443,37 +243,6 @@ watch(
   font-weight: 700;
   letter-spacing: 0;
   white-space: nowrap;
-}
-
-.review-star-input {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.review-star-button {
-  color: var(--bs-secondary-color);
-  cursor: pointer;
-  font-size: 1.8rem;
-  line-height: 1;
-  padding: 0.125rem;
-  transition: color 0.15s ease, transform 0.15s ease;
-}
-
-.review-star-button:hover,
-.review-star-button.is-filled {
-  color: var(--swinburne-supernova);
-}
-
-.btn-check:focus + .review-star-button {
-  border-radius: 0.25rem;
-  box-shadow: 0 0 0 0.25rem var(--swinburne-focus-ring);
-  outline: 0;
-}
-
-.btn-check:checked + .review-star-button {
-  color: var(--swinburne-supernova);
-  transform: translateY(-1px);
 }
 
 .text-bg-light {
