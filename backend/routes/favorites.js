@@ -4,19 +4,14 @@ import { requireStudent } from '../middleware/auth.js';
 import {
   normalizeFavoriteFields,
   selectFavoriteById,
+  validateCurrentFavoriteRequest,
   validateDashboardUserRequest,
   validateFavoriteRequest
 } from './support.js';
 
 const router = express.Router();
 
-router.get('/users/:id/favorites', requireStudent, async (req, res) => {
-  const userId = validateDashboardUserRequest(req, res);
-
-  if (!userId) {
-    return;
-  }
-
+const sendFavoriteDashboard = async (res, userId) => {
   let conn;
   try {
     conn = await pool.getConnection();
@@ -73,15 +68,9 @@ router.get('/users/:id/favorites', requireStudent, async (req, res) => {
   } finally {
     if (conn) conn.release();
   }
-});
+};
 
-router.post('/users/:id/favorites', requireStudent, async (req, res) => {
-  const favoriteRequest = validateFavoriteRequest(req, res);
-
-  if (!favoriteRequest) {
-    return;
-  }
-
+const createFavorite = async (res, favoriteRequest) => {
   const { userId, entityType, entityId } = favoriteRequest;
 
   let conn;
@@ -100,15 +89,9 @@ router.post('/users/:id/favorites', requireStudent, async (req, res) => {
   } finally {
     if (conn) conn.release();
   }
-});
+};
 
-router.delete('/users/:id/favorites', requireStudent, async (req, res) => {
-  const favoriteRequest = validateFavoriteRequest(req, res);
-
-  if (!favoriteRequest) {
-    return;
-  }
-
+const removeFavorite = async (res, favoriteRequest) => {
   const { userId, entityType, entityId } = favoriteRequest;
 
   let conn;
@@ -126,6 +109,60 @@ router.delete('/users/:id/favorites', requireStudent, async (req, res) => {
   } finally {
     if (conn) conn.release();
   }
+};
+
+router.get('/me/favorites', requireStudent, async (req, res) => {
+  await sendFavoriteDashboard(res, Number(req.user.id));
+});
+
+router.get('/users/:id/favorites', requireStudent, async (req, res) => {
+  const userId = validateDashboardUserRequest(req, res);
+
+  if (!userId) {
+    return;
+  }
+
+  await sendFavoriteDashboard(res, userId);
+});
+
+router.post('/me/favorites', requireStudent, async (req, res) => {
+  const favoriteRequest = validateCurrentFavoriteRequest(req, res);
+
+  if (!favoriteRequest) {
+    return;
+  }
+
+  await createFavorite(res, favoriteRequest);
+});
+
+router.post('/users/:id/favorites', requireStudent, async (req, res) => {
+  const favoriteRequest = validateFavoriteRequest(req, res);
+
+  if (!favoriteRequest) {
+    return;
+  }
+
+  await createFavorite(res, favoriteRequest);
+});
+
+router.delete('/me/favorites', requireStudent, async (req, res) => {
+  const favoriteRequest = validateCurrentFavoriteRequest(req, res);
+
+  if (!favoriteRequest) {
+    return;
+  }
+
+  await removeFavorite(res, favoriteRequest);
+});
+
+router.delete('/users/:id/favorites', requireStudent, async (req, res) => {
+  const favoriteRequest = validateFavoriteRequest(req, res);
+
+  if (!favoriteRequest) {
+    return;
+  }
+
+  await removeFavorite(res, favoriteRequest);
 });
 
 export default router;

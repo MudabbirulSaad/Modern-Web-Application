@@ -1,18 +1,17 @@
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { RouterLink } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
 import BaseTransitionList from '../components/common/BaseTransitionList.vue'
 import FavoriteButton from '../components/common/FavoriteButton.vue'
 import PaginationControls from '../components/common/PaginationControls.vue'
 import { DEFAULT_DIRECTORY_SORT_OPTIONS, useDirectoryBrowsing } from '../directory/useDirectoryBrowsing.js'
+import { useFavoriteWorkflow } from '../favorites/useFavoriteWorkflow.js'
 import { useUserStore } from '../store/userStore'
 
 const PAGE_LIMIT = 6
 const SORT_OPTIONS = DEFAULT_DIRECTORY_SORT_OPTIONS
 const userStore = useUserStore()
-const favoriteError = ref('')
-const updatingFavorites = ref(new Set())
 
 const directory = useDirectoryBrowsing({
   endpoint: '/api/tutors',
@@ -37,48 +36,14 @@ const setPage = directory.setPage
 onMounted(directory.fetchItems)
 onUnmounted(directory.dispose)
 
-const isUpdatingFavorite = (tutorId) => updatingFavorites.value.has(tutorId)
-
-const setTutorFavorite = (tutorId, hasFavorite) => {
-  directory.applyFavoriteState(tutorId, hasFavorite)
-}
-
-const toggleFavorite = async (tutor) => {
-  if (!userStore.isStudent || isUpdatingFavorite(tutor.id)) {
-    return
-  }
-
-  favoriteError.value = ''
-  updatingFavorites.value = new Set([...updatingFavorites.value, tutor.id])
-
-  try {
-    const nextState = !tutor.has_favorite
-    const response = await fetch(`/api/users/${userStore.userId}/favorites`, {
-      method: nextState ? 'POST' : 'DELETE',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        entity_type: 'tutor',
-        entity_id: tutor.id
-      })
-    })
-    const payload = await response.json()
-
-    if (!response.ok) {
-      throw new Error(payload.message || 'Unable to update favorite')
-    }
-
-    setTutorFavorite(tutor.id, nextState)
-  } catch (err) {
-    favoriteError.value = 'Favorite could not be updated. Please try again.'
-  } finally {
-    const nextUpdating = new Set(updatingFavorites.value)
-    nextUpdating.delete(tutor.id)
-    updatingFavorites.value = nextUpdating
-  }
-}
+const favoriteWorkflow = useFavoriteWorkflow({
+  entityType: 'tutor',
+  userStore,
+  applyFavoriteState: directory.applyFavoriteState
+})
+const favoriteError = favoriteWorkflow.favoriteError
+const isUpdatingFavorite = favoriteWorkflow.isUpdatingFavorite
+const toggleFavorite = favoriteWorkflow.toggleFavorite
 </script>
 
 <template>

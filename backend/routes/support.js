@@ -327,6 +327,17 @@ const validateFavoriteRequest = (req, res) => {
   return { userId: requestedUserId, entityType, entityId };
 };
 
+const validateCurrentFavoriteRequest = (req, res) => {
+  const { entityType, entityId } = readFavoritePayload(req.body);
+
+  if (!['tutor', 'course'].includes(entityType) || !Number.isInteger(entityId) || entityId <= 0) {
+    res.status(400).json({ status: 'error', message: 'Valid entity_type and entity_id are required' });
+    return null;
+  }
+
+  return { userId: Number(req.user.id), entityType, entityId };
+};
+
 const validateDashboardUserRequest = (req, res) => {
   const requestedUserId = Number(req.params.id);
 
@@ -409,6 +420,7 @@ export {
   readReviewPayload,
   normalizeReview,
   normalizeFavoriteFields,
+  validateCurrentFavoriteRequest,
   validateFavoriteRequest,
   validateDashboardUserRequest,
   selectReviewById,

@@ -4,6 +4,7 @@ import { RouterLink, useRoute } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
 import FavoriteButton from '../components/common/FavoriteButton.vue'
 import ReviewSection from '../components/ReviewSection.vue'
+import { useFavoriteWorkflow } from '../favorites/useFavoriteWorkflow.js'
 import { useUserStore } from '../store/userStore'
 
 const route = useRoute()
@@ -11,12 +12,22 @@ const userStore = useUserStore()
 const course = ref(null)
 const loading = ref(true)
 const error = ref('')
-const favoriteError = ref('')
-const favoriteLoading = ref(false)
 const notFound = ref(false)
 
 const tutors = computed(() => course.value?.tutors || [])
 const hasTutors = computed(() => tutors.value.length > 0)
+const favoriteWorkflow = useFavoriteWorkflow({
+  entityType: 'course',
+  userStore,
+  applyFavoriteState: (courseId, hasFavorite) => {
+    if (course.value?.id === courseId) {
+      course.value = { ...course.value, has_favorite: hasFavorite }
+    }
+  }
+})
+const favoriteError = favoriteWorkflow.favoriteError
+const favoriteLoading = computed(() => course.value ? favoriteWorkflow.isUpdatingFavorite(course.value.id) : false)
+const toggleFavorite = () => favoriteWorkflow.toggleFavorite(course.value)
 
 onMounted(async () => {
   try {
@@ -42,40 +53,6 @@ onMounted(async () => {
   }
 })
 
-const toggleFavorite = async () => {
-  if (!userStore.isStudent || !course.value || favoriteLoading.value) {
-    return
-  }
-
-  favoriteError.value = ''
-  favoriteLoading.value = true
-
-  try {
-    const nextState = !course.value.has_favorite
-    const response = await fetch(`/api/users/${userStore.userId}/favorites`, {
-      method: nextState ? 'POST' : 'DELETE',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        entity_type: 'course',
-        entity_id: course.value.id
-      })
-    })
-    const payload = await response.json()
-
-    if (!response.ok) {
-      throw new Error(payload.message || 'Unable to update favorite')
-    }
-
-    course.value = { ...course.value, has_favorite: nextState }
-  } catch (err) {
-    favoriteError.value = 'Favorite could not be updated. Please try again.'
-  } finally {
-    favoriteLoading.value = false
-  }
-}
 </script>
 
 <template>

@@ -2,6 +2,9 @@
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
+import FavoriteButton from '../components/common/FavoriteButton.vue'
+import { favoriteApi } from '../favorites/favoriteApi.js'
+import { useFavoriteWorkflow } from '../favorites/useFavoriteWorkflow.js'
 import { useUserStore } from '../store/userStore'
 
 const userStore = useUserStore()
@@ -14,6 +17,29 @@ const error = ref('')
 const hasFavoriteTutors = computed(() => favoriteTutors.value.length > 0)
 const hasFavoriteCourses = computed(() => favoriteCourses.value.length > 0)
 const hasReviews = computed(() => reviews.value.length > 0)
+const removeTutorCard = (tutorId, hasFavorite) => {
+  if (!hasFavorite) {
+    favoriteTutors.value = favoriteTutors.value.filter((tutor) => tutor.id !== tutorId)
+  }
+}
+const removeCourseCard = (courseId, hasFavorite) => {
+  if (!hasFavorite) {
+    favoriteCourses.value = favoriteCourses.value.filter((course) => course.id !== courseId)
+  }
+}
+const tutorFavoriteWorkflow = useFavoriteWorkflow({
+  entityType: 'tutor',
+  userStore,
+  applyFavoriteState: removeTutorCard
+})
+const courseFavoriteWorkflow = useFavoriteWorkflow({
+  entityType: 'course',
+  userStore,
+  applyFavoriteState: removeCourseCard
+})
+const favoriteError = computed(() => (
+  tutorFavoriteWorkflow.favoriteError.value || courseFavoriteWorkflow.favoriteError.value
+))
 
 const reviewEntityRoute = (review) => ({
   name: review.entity_type === 'course' ? 'course-detail' : 'tutor-detail',
@@ -27,27 +53,20 @@ onMounted(async () => {
   error.value = ''
 
   try {
-    const [favoritesResponse, reviewsResponse] = await Promise.all([
-      fetch(`/api/users/${userStore.userId}/favorites`, {
-        credentials: 'include'
-      }),
+    const [favoritesPayload, reviewsResponse] = await Promise.all([
+      favoriteApi.fetchCurrentFavorites(),
       fetch(`/api/users/${userStore.userId}/reviews`, {
         credentials: 'include'
       })
     ])
-    const favoritesPayload = await favoritesResponse.json()
     const reviewsPayload = await reviewsResponse.json()
-
-    if (!favoritesResponse.ok) {
-      throw new Error(favoritesPayload.message || 'Unable to load favorites')
-    }
 
     if (!reviewsResponse.ok) {
       throw new Error(reviewsPayload.message || 'Unable to load review history')
     }
 
-    favoriteTutors.value = favoritesPayload.data?.tutors || []
-    favoriteCourses.value = favoritesPayload.data?.courses || []
+    favoriteTutors.value = favoritesPayload?.tutors || []
+    favoriteCourses.value = favoritesPayload?.courses || []
     reviews.value = reviewsPayload.data || []
   } catch (err) {
     error.value = 'Dashboard data is unavailable right now. Please try again shortly.'
@@ -82,6 +101,8 @@ onMounted(async () => {
     </div>
 
     <div v-else class="vstack gap-5">
+      <div v-if="favoriteError" class="alert alert-warning" role="alert">{{ favoriteError }}</div>
+
       <section aria-labelledby="favorite-tutors-heading">
         <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
           <h2 id="favorite-tutors-heading" class="h3 mb-0">Favorite Tutors</h2>
@@ -96,7 +117,14 @@ onMounted(async () => {
           <div v-for="tutor in favoriteTutors" :key="tutor.id" class="col-12 col-md-6">
             <BaseCard>
               <template #header>
-                <span class="badge rounded-pill text-bg-light border">{{ tutor.department }}</span>
+                <div class="d-flex justify-content-between gap-3 align-items-center">
+                  <span class="badge rounded-pill text-bg-light border">{{ tutor.department }}</span>
+                  <FavoriteButton
+                    :active="true"
+                    :loading="tutorFavoriteWorkflow.isUpdatingFavorite(tutor.id)"
+                    @toggle="tutorFavoriteWorkflow.toggleFavorite(tutor)"
+                  />
+                </div>
               </template>
 
               <h3 class="h5 mb-3">{{ tutor.name }}</h3>
@@ -129,7 +157,14 @@ onMounted(async () => {
           <div v-for="course in favoriteCourses" :key="course.id" class="col-12 col-md-6">
             <BaseCard>
               <template #header>
-                <span class="badge rounded-pill text-bg-light border">{{ course.department }}</span>
+                <div class="d-flex justify-content-between gap-3 align-items-center">
+                  <span class="badge rounded-pill text-bg-light border">{{ course.department }}</span>
+                  <FavoriteButton
+                    :active="true"
+                    :loading="courseFavoriteWorkflow.isUpdatingFavorite(course.id)"
+                    @toggle="courseFavoriteWorkflow.toggleFavorite(course)"
+                  />
+                </div>
               </template>
 
               <h3 class="h5 mb-3">{{ course.title }}</h3>

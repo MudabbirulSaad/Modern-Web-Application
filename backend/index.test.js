@@ -2082,6 +2082,46 @@ describe('Favorite endpoints', () => {
     return [`auth_token=${token}`];
   };
 
+  it('should save a favorite for the current student', async () => {
+    const favorite = {
+      id: 3,
+      user_id: 7,
+      entity_type: 'course',
+      entity_id: 2
+    };
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce({ insertId: 3 })
+        .mockResolvedValueOnce([favorite]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .post('/api/me/favorites')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'course',
+        entity_id: 2
+      });
+
+    expect(res.statusCode).toEqual(201);
+    expect(res.body).toEqual({ status: 'ok', data: favorite });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      'INSERT INTO Favorites (user_id, entity_type, entity_id) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)',
+      [7, 'course', 2]
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      'SELECT id, user_id, entity_type, entity_id FROM Favorites WHERE id = ? LIMIT 1',
+      [3]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
   it('should save a favorite for the authenticated student', async () => {
     const favorite = {
       id: 3,
@@ -2182,6 +2222,66 @@ describe('Favorite endpoints', () => {
     spy.mockRestore();
   });
 
+  it('should return the current student favorite tutors and courses', async () => {
+    const favoriteTutors = [
+      {
+        id: 2,
+        name: 'Prof Liam Patel',
+        department: 'Information Systems',
+        bio: 'Teaches database design.',
+        created_at: '2026-05-18T00:00:00.000Z',
+        updated_at: '2026-05-18T00:00:00.000Z',
+        has_favorite: true
+      }
+    ];
+    const favoriteCourses = [
+      {
+        id: 3,
+        title: 'SWE30003 Software Architectures and Design',
+        department: 'Software Engineering',
+        description: 'Explore architectural patterns.',
+        created_at: '2026-05-18T00:00:00.000Z',
+        updated_at: '2026-05-18T00:00:00.000Z',
+        tutor_ids: '1,3',
+        tutor_names: 'Dr Maya Chen, Dr Amelia Wright',
+        has_favorite: true
+      }
+    ];
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce(favoriteTutors)
+        .mockResolvedValueOnce(favoriteCourses),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/me/favorites')
+      .set('Cookie', studentCookie());
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: {
+        tutors: favoriteTutors,
+        courses: favoriteCourses
+      }
+    });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('INNER JOIN Tutors t ON t.id = f.entity_id'),
+      [7]
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining('INNER JOIN Courses c ON c.id = f.entity_id'),
+      [7]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
   it('should remove a saved favorite for the authenticated student', async () => {
     const mockConn = {
       query: jest.fn().mockResolvedValue({ affectedRows: 1 }),
@@ -2191,6 +2291,32 @@ describe('Favorite endpoints', () => {
 
     const res = await request(app)
       .delete('/api/users/7/favorites')
+      .set('Cookie', studentCookie())
+      .send({
+        entity_type: 'tutor',
+        entity_id: 4
+      });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', message: 'Favorite removed' });
+    expect(mockConn.query).toHaveBeenCalledWith(
+      'DELETE FROM Favorites WHERE user_id = ? AND entity_type = ? AND entity_id = ?',
+      [7, 'tutor', 4]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('should remove a saved favorite for the current student', async () => {
+    const mockConn = {
+      query: jest.fn().mockResolvedValue({ affectedRows: 1 }),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .delete('/api/me/favorites')
       .set('Cookie', studentCookie())
       .send({
         entity_type: 'tutor',

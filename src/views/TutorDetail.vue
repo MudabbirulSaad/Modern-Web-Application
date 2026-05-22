@@ -1,9 +1,10 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
 import FavoriteButton from '../components/common/FavoriteButton.vue'
 import ReviewSection from '../components/ReviewSection.vue'
+import { useFavoriteWorkflow } from '../favorites/useFavoriteWorkflow.js'
 import { useUserStore } from '../store/userStore'
 
 const route = useRoute()
@@ -11,9 +12,19 @@ const userStore = useUserStore()
 const tutor = ref(null)
 const loading = ref(true)
 const error = ref('')
-const favoriteError = ref('')
-const favoriteLoading = ref(false)
 const notFound = ref(false)
+const favoriteWorkflow = useFavoriteWorkflow({
+  entityType: 'tutor',
+  userStore,
+  applyFavoriteState: (tutorId, hasFavorite) => {
+    if (tutor.value?.id === tutorId) {
+      tutor.value = { ...tutor.value, has_favorite: hasFavorite }
+    }
+  }
+})
+const favoriteError = favoriteWorkflow.favoriteError
+const favoriteLoading = computed(() => tutor.value ? favoriteWorkflow.isUpdatingFavorite(tutor.value.id) : false)
+const toggleFavorite = () => favoriteWorkflow.toggleFavorite(tutor.value)
 
 onMounted(async () => {
   try {
@@ -39,40 +50,6 @@ onMounted(async () => {
   }
 })
 
-const toggleFavorite = async () => {
-  if (!userStore.isStudent || !tutor.value || favoriteLoading.value) {
-    return
-  }
-
-  favoriteError.value = ''
-  favoriteLoading.value = true
-
-  try {
-    const nextState = !tutor.value.has_favorite
-    const response = await fetch(`/api/users/${userStore.userId}/favorites`, {
-      method: nextState ? 'POST' : 'DELETE',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include',
-      body: JSON.stringify({
-        entity_type: 'tutor',
-        entity_id: tutor.value.id
-      })
-    })
-    const payload = await response.json()
-
-    if (!response.ok) {
-      throw new Error(payload.message || 'Unable to update favorite')
-    }
-
-    tutor.value = { ...tutor.value, has_favorite: nextState }
-  } catch (err) {
-    favoriteError.value = 'Favorite could not be updated. Please try again.'
-  } finally {
-    favoriteLoading.value = false
-  }
-}
 </script>
 
 <template>
