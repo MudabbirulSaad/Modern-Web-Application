@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, onUnmounted } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
 import BaseTransitionList from '../components/common/BaseTransitionList.vue'
 import FavoriteButton from '../components/common/FavoriteButton.vue'
@@ -12,11 +12,13 @@ import { useUserStore } from '../store/userStore'
 const PAGE_LIMIT = 6
 const SORT_OPTIONS = DEFAULT_DIRECTORY_SORT_OPTIONS
 const userStore = useUserStore()
+const route = useRoute()
 
 const directory = useDirectoryBrowsing({
   endpoint: '/api/courses',
   pageLimit: PAGE_LIMIT,
-  errorMessage: 'Courses are unavailable right now. Please try again shortly.'
+  errorMessage: 'Courses are unavailable right now. Please try again shortly.',
+  initialDepartment: route.query.department
 })
 
 const courses = directory.items

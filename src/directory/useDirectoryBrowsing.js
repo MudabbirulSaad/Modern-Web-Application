@@ -11,13 +11,14 @@ export const useDirectoryBrowsing = ({
   pageLimit,
   fetcher = fetch,
   errorMessage,
-  debounceMs = 300
+  debounceMs = 300,
+  initialDepartment = ''
 }) => {
   const items = ref([])
   const loading = ref(true)
   const error = ref('')
   const searchQuery = ref('')
-  const departmentFilter = ref('')
+  const departmentFilter = ref(typeof initialDepartment === 'string' ? initialDepartment : '')
   const sortOrder = ref('best-match')
   const availableDepartments = ref([])
   const currentPage = ref(1)

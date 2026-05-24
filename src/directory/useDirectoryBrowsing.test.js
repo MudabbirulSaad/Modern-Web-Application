@@ -48,6 +48,34 @@ describe('directory browsing module', () => {
     browsing.dispose()
   })
 
+  it('uses an initial department filter before the first directory fetch', async () => {
+    const fetcher = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        data: [{ id: 1, title: 'Cybersecurity Fundamentals' }],
+        total: 1,
+        metadata: { departments: ['Computer Science'] }
+      })
+    }))
+    const browsing = useDirectoryBrowsing({
+      endpoint: '/api/courses',
+      pageLimit: 6,
+      fetcher,
+      errorMessage: 'Courses are unavailable right now. Please try again shortly.',
+      initialDepartment: 'Computer Science'
+    })
+
+    await browsing.fetchItems()
+
+    expect(browsing.departmentFilter.value).toBe('Computer Science')
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/courses?department=Computer+Science&page=1&limit=6&sort=best-match',
+      { credentials: 'include' }
+    )
+
+    browsing.dispose()
+  })
+
   it('fetches the selected page and exposes response metadata', async () => {
     const fetcher = jest.fn(async () => ({
       ok: true,
@@ -75,6 +103,39 @@ describe('directory browsing module', () => {
     expect(browsing.items.value).toEqual([{ id: 7, name: 'Dr Ada Lovelace' }])
     expect(browsing.totalItems.value).toBe(14)
     expect(browsing.availableDepartments.value).toEqual(['Computer Science', 'Design'])
+
+    browsing.dispose()
+  })
+
+  it('clears an initial department filter back to the normal unfiltered query', async () => {
+    const fetcher = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        data: [],
+        total: 0,
+        metadata: { departments: ['Computer Science'] }
+      })
+    }))
+    const browsing = useDirectoryBrowsing({
+      endpoint: '/api/tutors',
+      pageLimit: 6,
+      fetcher,
+      errorMessage: 'Tutors are unavailable right now. Please try again shortly.',
+      initialDepartment: 'Computer Science'
+    })
+
+    browsing.clearFilters()
+
+    await nextTick()
+    jest.advanceTimersByTime(300)
+    await flushPromises()
+
+    expect(browsing.departmentFilter.value).toBe('')
+    expect(browsing.hasActiveFilters.value).toBe(false)
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/tutors?page=1&limit=6&sort=best-match',
+      { credentials: 'include' }
+    )
 
     browsing.dispose()
   })
