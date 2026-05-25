@@ -16,7 +16,11 @@
     "seed:swinburne": "node backend/seed_swinburne.js",
     "init-db": "node backend/setup_db.js",
     "dev:all": "concurrently \"npm run dev\" \"npm run server\"",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "d1:schema:apply": "wrangler d1 execute swindirectory-production --remote --file cloudflare/d1/schema.sql",
+    "d1:seed:swinburne:generate": "node scripts/cloudflare/create-d1-swinburne-seed.js",
+    "d1:seed:swinburne": "npm run d1:seed:swinburne:generate && wrangler d1 execute swindirectory-production --remote --file cloudflare/d1/seed-swinburne.sql",
+    "cf:deploy": "npm run build && wrangler pages deploy --project-name swindirectory --branch main"
   },
   "dependencies": {
     "@popperjs/core": "^2.11.8",

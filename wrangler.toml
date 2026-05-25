@@ -1,0 +1,8 @@
+name = "swindirectory"
+compatibility_date = "2026-05-21"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "swindirectory-production"
+database_id = "869a419a-37cf-4bab-8854-192de42a48e1"
