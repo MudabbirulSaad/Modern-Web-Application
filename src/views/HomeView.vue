@@ -28,6 +28,9 @@ import { RouterLink } from 'vue-router'
             <li>
               <RouterLink class="dropdown-item" to="/tutors">Browse tutors</RouterLink>
             </li>
+            <li>
+              <RouterLink class="dropdown-item" to="/departments">Browse departments</RouterLink>
+            </li>
           </ul>
         </div>
 
