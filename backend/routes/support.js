@@ -150,12 +150,17 @@ const buildTutorFilters = ({ search, department }) => {
   const params = [];
 
   if (search) {
-    clauses.push('(name LIKE ? OR bio LIKE ?)');
+    clauses.push('(t.name LIKE ? OR t.bio LIKE ?)');
     params.push(`%${search}%`, `%${search}%`);
   }
 
   if (department) {
-    clauses.push('department = ?');
+    clauses.push(`EXISTS (
+      SELECT 1
+      FROM Course_Tutors ct_filter
+      INNER JOIN Courses c_filter ON c_filter.id = ct_filter.course_id
+      WHERE ct_filter.tutor_id = t.id AND c_filter.department = ?
+    )`);
     params.push(department);
   }
 

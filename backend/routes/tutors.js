@@ -25,8 +25,8 @@ router.get('/', async (req, res) => {
   const { whereClause, params } = buildTutorFilters(directoryFilters);
   const departmentFilters = buildTutorFilters({ search: directoryFilters.search, department: '' });
   const departmentWhereClause = departmentFilters.whereClause
-    ? `${departmentFilters.whereClause} AND department IS NOT NULL AND department <> ""`
-    : ' WHERE department IS NOT NULL AND department <> ""';
+    ? `${departmentFilters.whereClause} AND c.department IS NOT NULL AND c.department <> ""`
+    : ' WHERE c.department IS NOT NULL AND c.department <> ""';
   const pagination = readPagination(req.query);
   const sort = readDirectorySort(req.query);
   const paginationClause = pagination.isPaginated ? ' LIMIT ? OFFSET ?' : '';
@@ -34,17 +34,25 @@ router.get('/', async (req, res) => {
   const needsReviewStats = sort !== 'alphabetical';
   const reviewStatsJoin = needsReviewStats ? buildReviewStatsJoin('tutor', 't') : '';
   const orderClause = buildDirectoryOrderClause(sort, 't', 'name');
+  const departmentMetadataSql = `
+      SELECT DISTINCT c.department AS department
+      FROM Courses c
+      INNER JOIN Course_Tutors ct_metadata ON ct_metadata.course_id = c.id
+      INNER JOIN Tutors t ON t.id = ct_metadata.tutor_id
+      ${departmentWhereClause}
+      ORDER BY c.department ASC
+      `;
 
   let conn;
   try {
     conn = await pool.getConnection();
     const countRows = params.length > 0
-      ? await conn.query(`SELECT COUNT(*) AS total FROM Tutors${whereClause}`, params)
-      : await conn.query(`SELECT COUNT(*) AS total FROM Tutors${whereClause}`);
+      ? await conn.query(`SELECT COUNT(*) AS total FROM Tutors t${whereClause}`, params)
+      : await conn.query(`SELECT COUNT(*) AS total FROM Tutors t${whereClause}`);
     const total = readTotalCount(countRows);
     const departmentRows = departmentFilters.params.length > 0
-      ? await conn.query(`SELECT DISTINCT department FROM Tutors${departmentWhereClause} ORDER BY department ASC`, departmentFilters.params)
-      : await conn.query(`SELECT DISTINCT department FROM Tutors${departmentWhereClause} ORDER BY department ASC`);
+      ? await conn.query(departmentMetadataSql, departmentFilters.params)
+      : await conn.query(departmentMetadataSql);
     const departments = departmentRows.map((row) => row.department);
     let rows;
 
@@ -87,7 +95,7 @@ router.get('/', async (req, res) => {
         ? await conn.query(sql, queryParams)
         : await conn.query(sql);
     } else {
-      const sql = `SELECT id, name, department, bio, created_at, updated_at, 0 AS has_favorite FROM Tutors${whereClause} ORDER BY name ASC${paginationClause}`;
+      const sql = `SELECT t.id, t.name, t.department, t.bio, t.created_at, t.updated_at, 0 AS has_favorite FROM Tutors t${whereClause} ORDER BY t.name ASC${paginationClause}`;
       const queryParams = [...params, ...paginationParams];
       rows = queryParams.length > 0
         ? await conn.query(sql, queryParams)

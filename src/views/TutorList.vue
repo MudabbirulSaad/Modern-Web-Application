@@ -74,9 +74,9 @@ const toggleFavorite = favoriteWorkflow.toggleFavorite
         </div>
 
         <div class="col-12 col-md-6 col-lg-3">
-          <label class="form-label" for="tutor-department-filter">Staff affiliation</label>
+          <label class="form-label" for="tutor-department-filter">Course department</label>
           <select id="tutor-department-filter" v-model="departmentFilter" class="form-select">
-            <option value="">All staff affiliations</option>
+            <option value="">All course departments</option>
             <option
               v-for="department in availableDepartments"
               :key="department"
