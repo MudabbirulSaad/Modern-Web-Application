@@ -128,7 +128,7 @@ export const useAdminManagement = ({
     success.value = ''
 
     if (!tutorForm.name.trim() || !tutorForm.department.trim() || !tutorForm.bio.trim()) {
-      tutorFormError.value = 'Name, department, and bio are required.'
+      tutorFormError.value = 'Name, staff affiliation, and bio are required.'
       return false
     }
 

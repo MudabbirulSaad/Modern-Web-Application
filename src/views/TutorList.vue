@@ -53,7 +53,7 @@ const toggleFavorite = favoriteWorkflow.toggleFavorite
     <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 align-items-lg-end mb-4">
       <div>
         <p class="text-uppercase text-primary fw-bold small mb-2">Tutor Directory</p>
-        <h1 class="mb-2">Find tutors by department</h1>
+        <h1 class="mb-2">Find tutors by academic unit</h1>
         <p class="lead text-body-secondary mb-0">
           Browse available teaching staff and compare their academic focus before exploring course reviews.
         </p>
@@ -74,9 +74,9 @@ const toggleFavorite = favoriteWorkflow.toggleFavorite
         </div>
 
         <div class="col-12 col-md-6 col-lg-3">
-          <label class="form-label" for="tutor-department-filter">Department</label>
+          <label class="form-label" for="tutor-department-filter">Staff affiliation</label>
           <select id="tutor-department-filter" v-model="departmentFilter" class="form-select">
-            <option value="">All departments</option>
+            <option value="">All staff affiliations</option>
             <option
               v-for="department in availableDepartments"
               :key="department"
@@ -144,7 +144,7 @@ const toggleFavorite = favoriteWorkflow.toggleFavorite
         <BaseCard>
           <template #header>
             <div class="d-flex justify-content-between gap-3 align-items-center">
-              <span class="badge rounded-pill text-bg-light border">{{ tutor.department }}</span>
+              <span class="badge rounded-pill text-bg-light border">Staff affiliation: {{ tutor.department }}</span>
               <FavoriteButton
                 v-if="userStore.isStudent"
                 :active="tutor.has_favorite"

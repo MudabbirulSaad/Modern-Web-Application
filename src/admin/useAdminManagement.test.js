@@ -229,7 +229,7 @@ describe('admin management workflow', () => {
 
     expect(tutorSaved).toBe(false)
     expect(courseSaved).toBe(false)
-    expect(workflow.tutorFormError.value).toBe('Name, department, and bio are required.')
+    expect(workflow.tutorFormError.value).toBe('Name, staff affiliation, and bio are required.')
     expect(workflow.courseFormError.value).toBe('Title, department, and description are required.')
     expect(adminApi.createTutor).not.toHaveBeenCalled()
     expect(adminApi.createCourse).not.toHaveBeenCalled()

@@ -228,7 +228,7 @@ onMounted(() => {
                   </div>
                   <div v-else class="course-tutor-assignment">
                     <label class="form-label small text-body-secondary" for="course-tutor-search">
-                      Search by tutor name or department
+                      Search by tutor name or staff affiliation
                     </label>
                     <input
                       id="course-tutor-search"
@@ -392,7 +392,7 @@ onMounted(() => {
                 </div>
 
                 <div class="mb-3">
-                  <label class="form-label" for="tutor-department">Department</label>
+                  <label class="form-label" for="tutor-department">Staff affiliation or academic unit</label>
                   <input
                     id="tutor-department"
                     v-model="tutorForm.department"
@@ -400,6 +400,9 @@ onMounted(() => {
                     type="text"
                     required
                   >
+                  <p class="form-text mb-0">
+                    This is shown on tutor profiles and is separate from Course Department discovery.
+                  </p>
                 </div>
 
                 <div class="mb-4">
@@ -454,7 +457,7 @@ onMounted(() => {
                   <thead>
                     <tr>
                       <th scope="col">Tutor</th>
-                      <th scope="col">Department</th>
+                      <th scope="col">Staff affiliation</th>
                       <th class="text-end" scope="col">Actions</th>
                     </tr>
                   </thead>

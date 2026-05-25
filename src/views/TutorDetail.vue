@@ -80,7 +80,7 @@ onMounted(async () => {
       <BaseCard>
         <template #header>
           <div class="d-flex justify-content-between gap-3 align-items-center">
-            <span class="badge rounded-pill text-bg-light border">{{ tutor.department }}</span>
+            <span class="badge rounded-pill text-bg-light border">Academic Unit: {{ tutor.department }}</span>
             <FavoriteButton
               v-if="userStore.isStudent"
               :active="tutor.has_favorite"
