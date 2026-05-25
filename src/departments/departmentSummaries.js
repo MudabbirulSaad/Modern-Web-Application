@@ -2,8 +2,13 @@ const makeDirectoryUrl = (basePath, department) => (
   `${basePath}?department=${encodeURIComponent(department)}`
 )
 
-const addRecord = (summariesByName, record, countKey) => {
-  const name = typeof record.department === 'string' ? record.department.trim() : ''
+const readCourseTutorIds = (course) => String(course.tutor_ids || '')
+  .split(',')
+  .map((tutorId) => tutorId.trim())
+  .filter(Boolean)
+
+const addCourse = (summariesByName, course) => {
+  const name = typeof course.department === 'string' ? course.department.trim() : ''
 
   if (!name) {
     return
@@ -14,22 +19,28 @@ const addRecord = (summariesByName, record, countKey) => {
       name,
       courseCount: 0,
       tutorCount: 0,
+      tutorIds: new Set(),
       courseDirectoryUrl: makeDirectoryUrl('/courses', name),
       tutorDirectoryUrl: makeDirectoryUrl('/tutors', name)
     })
   }
 
   const summary = summariesByName.get(name)
-  summary[countKey] += 1
+  summary.courseCount += 1
+  readCourseTutorIds(course).forEach((tutorId) => summary.tutorIds.add(tutorId))
 }
 
-export const buildDepartmentSummaries = ({ courses = [], tutors = [] } = {}) => {
+export const buildDepartmentSummaries = ({ courses = [] } = {}) => {
   const summariesByName = new Map()
 
-  courses.forEach((course) => addRecord(summariesByName, course, 'courseCount'))
-  tutors.forEach((tutor) => addRecord(summariesByName, tutor, 'tutorCount'))
+  courses.forEach((course) => addCourse(summariesByName, course))
 
-  return [...summariesByName.values()].sort((first, second) => (
-    first.name.localeCompare(second.name)
-  ))
+  return [...summariesByName.values()]
+    .map(({ tutorIds, ...summary }) => ({
+      ...summary,
+      tutorCount: tutorIds.size
+    }))
+    .sort((first, second) => (
+      first.name.localeCompare(second.name)
+    ))
 }

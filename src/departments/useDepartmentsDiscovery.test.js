@@ -16,14 +16,14 @@ describe('departments discovery', () => {
     const fetcher = jest.fn(async (url) => {
       if (url === '/api/courses?sort=alphabetical') {
         return makeResponse([
-          { id: 1, title: 'Networks', department: 'Computer Science' },
-          { id: 2, title: 'Typography', department: 'Design' }
+          { id: 1, title: 'Networks', department: 'Computer Science', tutor_ids: '10' },
+          { id: 2, title: 'Typography', department: 'Design', tutor_ids: '' }
         ])
       }
 
       return makeResponse([
-        { id: 10, name: 'Dr Ada Lovelace', department: 'Computer Science' },
-        { id: 11, name: 'Prof Max Bill', department: 'Design' }
+        { id: 10, name: 'Dr Ada Lovelace', department: 'Engineering' },
+        { id: 11, name: 'Prof Max Bill', department: 'Art and Design' }
       ])
     })
     const discovery = useDepartmentsDiscovery({ fetcher })
