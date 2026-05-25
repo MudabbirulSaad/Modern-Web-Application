@@ -60,4 +60,34 @@ describe('department summaries', () => {
       })
     ])
   })
+
+  it('counts distinct Course-Tutor assignments without using Tutor staff affiliations as departments', () => {
+    const summaries = buildDepartmentSummaries({
+      courses: [
+        { id: 1, title: 'Machine Learning Systems', department: 'Artificial Intelligence', tutor_ids: '10,12' },
+        { id: 2, title: 'Intelligent Systems', department: 'Artificial Intelligence', tutor_ids: '10' },
+        { id: 3, title: 'Financial Analytics', department: 'Business Analytics', tutor_ids: '14' }
+      ],
+      tutors: [
+        { id: 10, name: 'Dr Aisha Rahman', department: 'Data Science Institute' },
+        { id: 12, name: 'Prof Mina Okafor', department: 'Computing Technologies' },
+        { id: 14, name: 'Dr Sam Lee', department: 'Artificial Intelligence' }
+      ]
+    })
+
+    expect(summaries).toEqual([
+      expect.objectContaining({
+        name: 'Artificial Intelligence',
+        courseCount: 2,
+        tutorCount: 2,
+        tutorDirectoryUrl: '/tutors?department=Artificial%20Intelligence'
+      }),
+      expect.objectContaining({
+        name: 'Business Analytics',
+        courseCount: 1,
+        tutorCount: 1,
+        tutorDirectoryUrl: '/tutors?department=Business%20Analytics'
+      })
+    ])
+  })
 })

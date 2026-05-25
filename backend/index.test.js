@@ -207,6 +207,38 @@ describe('GET /api/tutors', () => {
     spy.mockRestore();
   });
 
+  it('should not treat Tutor staff affiliation as the department discovery filter', async () => {
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ total: 0 }])
+        .mockResolvedValueOnce([{ department: 'Artificial Intelligence' }])
+        .mockResolvedValueOnce([]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/tutors')
+      .query({ department: 'Data Science Institute' });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: [],
+      total: 0,
+      metadata: {
+        departments: ['Artificial Intelligence']
+      }
+    });
+    expect(mockConn.query.mock.calls[0][0]).toContain('FROM Course_Tutors ct_filter');
+    expect(mockConn.query.mock.calls[0][0]).not.toContain('t.department = ?');
+    expect(mockConn.query.mock.calls[2][0]).toContain('FROM Course_Tutors ct_filter');
+    expect(mockConn.query.mock.calls[2][0]).not.toContain('t.department = ?');
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
   it('should de-duplicate tutors who teach multiple courses in the filtered department', async () => {
     const mockTutors = [
       {

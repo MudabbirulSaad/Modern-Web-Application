@@ -12,6 +12,42 @@ const flushPromises = async () => {
 }
 
 describe('departments discovery', () => {
+  it('builds discovery cards from Course Departments when Tutor staff affiliations differ', async () => {
+    const fetcher = jest.fn(async (url) => {
+      if (url === '/api/courses?sort=alphabetical') {
+        return makeResponse([
+          {
+            id: 1,
+            title: 'Machine Learning Systems',
+            department: 'Artificial Intelligence',
+            tutor_ids: '10'
+          }
+        ])
+      }
+
+      return makeResponse([
+        {
+          id: 10,
+          name: 'Dr Aisha Rahman',
+          department: 'Data Science Institute'
+        }
+      ])
+    })
+    const discovery = useDepartmentsDiscovery({ fetcher })
+
+    await discovery.fetchDepartments()
+
+    expect(discovery.departments.value).toEqual([
+      {
+        name: 'Artificial Intelligence',
+        courseCount: 1,
+        tutorCount: 1,
+        courseDirectoryUrl: '/courses?department=Artificial%20Intelligence',
+        tutorDirectoryUrl: '/tutors?department=Artificial%20Intelligence'
+      }
+    ])
+  })
+
   it('loads unpaginated directory data and filters department summaries by search', async () => {
     const fetcher = jest.fn(async (url) => {
       if (url === '/api/courses?sort=alphabetical') {
