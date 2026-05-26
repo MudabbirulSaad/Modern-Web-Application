@@ -26,10 +26,23 @@ export const buildAdvisorStatusNotice = (result) => {
     return null
   }
 
+  // Demo note: local mode is expected when Groq is missing or invalid; present it as useful fallback, not a failure.
+  const messages = result.limitations
+    .filter((message) => message !== 'Generated from local matching only.')
+    .map((message) => (
+      message === 'AI ranking is unavailable; showing deterministic local recommendations.'
+        ? 'Recommendations are available from local directory matching while AI ranking is unavailable.'
+        : message
+    ))
+
+  if (result.mode !== 'ai' && result.limitations.includes('Generated from local matching only.') && messages.length === 0) {
+    messages.push('Recommendations are available from local directory matching.')
+  }
+
   return {
-    tone: result.mode === 'ai' ? 'info' : 'warning',
+    tone: 'info',
     title: result.mode === 'ai' ? 'Advisor context notice' : 'Local recommendation mode',
-    messages: result.limitations
+    messages
   }
 }
 

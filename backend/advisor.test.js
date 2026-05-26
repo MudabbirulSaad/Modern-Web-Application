@@ -520,4 +520,24 @@ describe('POST /api/advisor/recommendations', () => {
     expect(outputText).not.toContain('user_id');
     expect(mockConn.release).toHaveBeenCalled();
   });
+
+  it('does not persist Advisor conversations or generated recommendation results', async () => {
+    const mockConn = mockAdvisorConnection();
+
+    const res = await request(app)
+      .post('/api/advisor/recommendations')
+      .set('Cookie', [`auth_token=${studentToken()}`])
+      .send(advisorRequest());
+
+    const sqlText = mockConn.query.mock.calls
+      .map(([sql]) => String(sql).replace(/\s+/g, ' ').trim().toLowerCase());
+
+    expect(res.statusCode).toBe(200);
+    expect(sqlText).toHaveLength(2);
+    expect(sqlText.every((sql) => sql.startsWith('select'))).toBe(true);
+    expect(sqlText.join(' ')).not.toMatch(/\b(insert|update|delete)\b/);
+    expect(sqlText.join(' ')).not.toContain('advisor_conversations');
+    expect(sqlText.join(' ')).not.toContain('advisor_results');
+    expect(mockConn.release).toHaveBeenCalled();
+  });
 });

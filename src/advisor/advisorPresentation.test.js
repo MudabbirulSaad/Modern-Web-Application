@@ -58,13 +58,14 @@ describe('advisor recommendation presentation', () => {
       mode: 'local',
       limitations: [
         'Generated from local matching only.',
+        'AI ranking is unavailable; showing deterministic local recommendations.',
         'No exact Department match was found; showing closest matching Courses.'
       ]
     })).toEqual({
-      tone: 'warning',
+      tone: 'info',
       title: 'Local recommendation mode',
       messages: [
-        'Generated from local matching only.',
+        'Recommendations are available from local directory matching while AI ranking is unavailable.',
         'No exact Department match was found; showing closest matching Courses.'
       ]
     })
