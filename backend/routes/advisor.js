@@ -1,5 +1,6 @@
 import express from 'express';
 import pool from '../db.js';
+import { rankRecommendationsWithGroq } from '../advisorGroq.js';
 
 const router = express.Router();
 
@@ -202,6 +203,25 @@ router.post('/recommendations', async (req, res) => {
 
     if (!hasExactDepartmentMatch && recommendations.length > 0) {
       limitations.push(WEAK_MATCH_LIMITATION);
+    }
+
+    try {
+      const groqResult = await rankRecommendationsWithGroq(preferences, recommendations);
+
+      if (groqResult) {
+        res.json({
+          status: 'ok',
+          data: {
+            mode: 'ai',
+            summary: groqResult.summary,
+            limitations: [],
+            recommendations: groqResult.recommendations
+          }
+        });
+        return;
+      }
+    } catch {
+      limitations.push('AI ranking is unavailable; showing deterministic local recommendations.');
     }
 
     res.json({
