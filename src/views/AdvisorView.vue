@@ -9,14 +9,31 @@ import {
   useAdvisorDiscovery
 } from '../advisor/useAdvisorDiscovery.js'
 import {
+  applyAdvisorFavoriteState,
+  buildAdvisorPersonalizationNotice,
   buildAdvisorRecommendationCards,
   buildAdvisorStatusNotice
 } from '../advisor/advisorPresentation.js'
 import BaseCard from '../components/common/BaseCard.vue'
+import FavoriteButton from '../components/common/FavoriteButton.vue'
+import { useFavoriteWorkflow } from '../favorites/useFavoriteWorkflow.js'
+import { useUserStore } from '../store/userStore'
 
+const userStore = useUserStore()
 const advisor = useAdvisorDiscovery()
 const cards = computed(() => buildAdvisorRecommendationCards(advisor.result.value?.recommendations || []))
 const statusNotice = computed(() => buildAdvisorStatusNotice(advisor.result.value))
+const personalizationNotice = computed(() => buildAdvisorPersonalizationNotice(advisor.result.value))
+const favoriteWorkflow = useFavoriteWorkflow({
+  entityType: 'course',
+  userStore,
+  applyFavoriteState: (courseId, hasFavorite) => {
+    applyAdvisorFavoriteState(advisor.result, courseId, hasFavorite)
+  }
+})
+const favoriteError = favoriteWorkflow.favoriteError
+const isUpdatingFavorite = favoriteWorkflow.isUpdatingFavorite
+const toggleFavorite = favoriteWorkflow.toggleFavorite
 </script>
 
 <template>
@@ -173,15 +190,39 @@ const statusNotice = computed(() => buildAdvisorStatusNotice(advisor.result.valu
             </ul>
           </div>
 
+          <div
+            v-if="personalizationNotice"
+            class="alert mb-4"
+            :class="personalizationNotice.tone === 'info' ? 'alert-info' : 'alert-secondary'"
+            role="status"
+          >
+            <strong>{{ personalizationNotice.title }}</strong>
+            <ul class="mb-0 mt-2">
+              <li v-for="message in personalizationNotice.messages" :key="message">{{ message }}</li>
+            </ul>
+          </div>
+
           <div v-if="cards.length === 0" class="alert alert-secondary" role="status">
             No Course recommendations are available for these preferences yet.
           </div>
 
           <div v-else class="row g-4">
+            <div v-if="favoriteError" class="col-12">
+              <div class="alert alert-warning mb-0" role="alert">{{ favoriteError }}</div>
+            </div>
+
             <div v-for="card in cards" :key="card.key" class="col-12 col-lg-6">
               <BaseCard>
                 <template #header>
-                  <span class="badge rounded-pill text-bg-light border">{{ card.department }}</span>
+                  <div class="d-flex justify-content-between gap-3 align-items-center">
+                    <span class="badge rounded-pill text-bg-light border">{{ card.department }}</span>
+                    <FavoriteButton
+                      v-if="userStore.isStudent"
+                      :active="card.hasFavorite"
+                      :loading="isUpdatingFavorite(card.courseId)"
+                      @toggle="toggleFavorite(card.favoriteItem)"
+                    />
+                  </div>
                 </template>
 
                 <h3 class="h4 mb-3">{{ card.courseTitle }}</h3>

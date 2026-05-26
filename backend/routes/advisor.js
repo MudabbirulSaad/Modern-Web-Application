@@ -1,6 +1,7 @@
 import express from 'express';
 import pool from '../db.js';
 import { rankRecommendationsWithGroq } from '../advisorGroq.js';
+import { decodeAuthCookie } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -41,6 +42,7 @@ const groupCandidateRows = (rows) => {
         title: row.course_title,
         department: row.course_department,
         description: row.course_description,
+        has_favorite: false,
         averageRating: row.average_rating === null || row.average_rating === undefined
           ? null
           : Number(row.average_rating),
@@ -61,7 +63,23 @@ const groupCandidateRows = (rows) => {
   return [...courses.values()];
 };
 
-const scoreCourse = (course, preferences, hasExactDepartmentMatch) => {
+const buildStudentEvidenceByCourse = (rows = []) => {
+  const evidence = new Map();
+
+  rows.forEach((row) => {
+    evidence.set(Number(row.course_id), {
+      hasFavorite: Boolean(row.has_favorite),
+      reviewCount: Number(row.student_review_count || 0),
+      averageRating: row.student_average_rating === null || row.student_average_rating === undefined
+        ? null
+        : Number(row.student_average_rating)
+    });
+  });
+
+  return evidence;
+};
+
+const scoreCourse = (course, preferences, hasExactDepartmentMatch, studentEvidence = null) => {
   const interest = normalizeText(preferences.interestArea);
   const department = normalizeText(course.department);
   const searchableCourseText = normalizeText(`${course.title} ${course.department} ${course.description}`);
@@ -110,6 +128,16 @@ const scoreCourse = (course, preferences, hasExactDepartmentMatch) => {
     limitations.push('Limited course review data is available.');
   }
 
+  if (studentEvidence?.hasFavorite) {
+    score += 6;
+    evidence.push('Saved in your Favorites');
+  }
+
+  if (studentEvidence?.reviewCount > 0 && studentEvidence.averageRating !== null) {
+    score += Math.round(studentEvidence.averageRating);
+    evidence.push(`You reviewed this Course with a ${studentEvidence.averageRating.toFixed(1)} rating`);
+  }
+
   if (!hasExactDepartmentMatch) {
     limitations.unshift(WEAK_MATCH_LIMITATION);
   }
@@ -123,7 +151,8 @@ const scoreCourse = (course, preferences, hasExactDepartmentMatch) => {
       id: course.id,
       title: course.title,
       department: course.department,
-      description: course.description
+      description: course.description,
+      has_favorite: Boolean(studentEvidence?.hasFavorite)
     },
     score,
     reason: `${course.title} is recommended because ${evidence[0].toLowerCase()}.`,
@@ -133,7 +162,7 @@ const scoreCourse = (course, preferences, hasExactDepartmentMatch) => {
   };
 };
 
-const buildRecommendations = (rows, preferences) => {
+const buildRecommendations = (rows, preferences, studentEvidenceByCourse = new Map()) => {
   const courses = groupCandidateRows(rows);
   const interest = normalizeText(preferences.interestArea);
   const hasExactDepartmentMatch = courses.some((course) => normalizeText(course.department) === interest);
@@ -141,7 +170,12 @@ const buildRecommendations = (rows, preferences) => {
   return {
     hasExactDepartmentMatch,
     recommendations: courses
-      .map((course) => scoreCourse(course, preferences, hasExactDepartmentMatch))
+      .map((course) => scoreCourse(
+        course,
+        preferences,
+        hasExactDepartmentMatch,
+        studentEvidenceByCourse.get(course.id) || null
+      ))
       .sort((a, b) => {
         if (hasExactDepartmentMatch) {
           const aExact = normalizeText(a.course.department) === interest;
@@ -155,6 +189,46 @@ const buildRecommendations = (rows, preferences) => {
         return b.score - a.score || a.course.title.localeCompare(b.course.title);
       })
       .slice(0, 5)
+  };
+};
+
+const readStudentContext = (req) => {
+  const user = decodeAuthCookie(req);
+  return user?.role === 'student' ? user : null;
+};
+
+const readStudentEvidence = async (conn, studentId) => conn.query(`
+  SELECT
+    c.id AS course_id,
+    CASE WHEN f.id IS NULL THEN 0 ELSE 1 END AS has_favorite,
+    COUNT(r.id) AS student_review_count,
+    AVG(r.rating) AS student_average_rating
+  FROM Courses c
+  LEFT JOIN Favorites f
+    ON f.entity_type = "course"
+    AND f.entity_id = c.id
+    AND f.user_id = ?
+  LEFT JOIN Reviews r
+    ON r.entity_type = "course"
+    AND r.entity_id = c.id
+    AND r.user_id = ?
+  GROUP BY c.id, f.id
+`, [studentId, studentId]);
+
+const buildPersonalization = (student, studentEvidenceRows) => {
+  if (!student) {
+    return { active: false, signals: [] };
+  }
+
+  const hasFavorites = studentEvidenceRows.some((row) => Boolean(row.has_favorite));
+  const hasReviewActivity = studentEvidenceRows.some((row) => Number(row.student_review_count || 0) > 0);
+
+  return {
+    active: true,
+    signals: [
+      ...(hasFavorites ? ['Favorites'] : []),
+      ...(hasReviewActivity ? ['Your review activity'] : [])
+    ]
   };
 };
 
@@ -172,6 +246,7 @@ router.post('/recommendations', async (req, res) => {
   let conn;
   try {
     conn = await pool.getConnection();
+    const student = readStudentContext(req);
     const rows = await conn.query(`
       SELECT
         c.id AS course_id,
@@ -197,8 +272,11 @@ router.post('/recommendations', async (req, res) => {
       ) review_stats ON review_stats.entity_id = c.id
       ORDER BY c.title ASC, t.name ASC
     `);
+    const studentEvidenceRows = student ? await readStudentEvidence(conn, student.id) : [];
+    const personalization = buildPersonalization(student, studentEvidenceRows);
+    const studentEvidenceByCourse = buildStudentEvidenceByCourse(studentEvidenceRows);
 
-    const { hasExactDepartmentMatch, recommendations } = buildRecommendations(rows, preferences);
+    const { hasExactDepartmentMatch, recommendations } = buildRecommendations(rows, preferences, studentEvidenceByCourse);
     const limitations = [LOCAL_LIMITATION];
 
     if (!hasExactDepartmentMatch && recommendations.length > 0) {
@@ -214,6 +292,7 @@ router.post('/recommendations', async (req, res) => {
           data: {
             mode: 'ai',
             summary: groqResult.summary,
+            personalization,
             limitations: [],
             recommendations: groqResult.recommendations
           }
@@ -229,6 +308,7 @@ router.post('/recommendations', async (req, res) => {
       data: {
         mode: 'local',
         summary: `Local Course recommendations for ${preferences.interestArea}.`,
+        personalization,
         limitations,
         recommendations
       }

@@ -2,7 +2,9 @@ import request from 'supertest';
 import app from './app.js';
 import pool from './db.js';
 import { jest } from '@jest/globals';
+import jwt from 'jsonwebtoken';
 import { buildGroqMessages } from './advisorGroq.js';
+import { JWT_SECRET } from './middleware/auth.js';
 
 afterAll(async () => {
   await pool.end();
@@ -66,9 +68,21 @@ const advisorRows = () => [
   }
 ];
 
-const mockAdvisorConnection = (rows = advisorRows()) => {
+const studentToken = (overrides = {}) => jwt.sign(
+  { id: 7, email: 'student@example.com', role: 'student', ...overrides },
+  JWT_SECRET,
+  { expiresIn: '1h' }
+);
+
+const mockAdvisorConnection = (rows = advisorRows(), studentEvidenceRows = []) => {
   const mockConn = {
-    query: jest.fn().mockResolvedValue(rows),
+    query: jest.fn((sql) => {
+      if (String(sql).includes('LEFT JOIN Favorites f')) {
+        return Promise.resolve(studentEvidenceRows);
+      }
+
+      return Promise.resolve(rows);
+    }),
     release: jest.fn()
   };
   jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
@@ -136,7 +150,8 @@ describe('POST /api/advisor/recommendations', () => {
         id: 1,
         title: 'Machine Learning',
         department: 'Artificial Intelligence',
-        description: 'Build practical AI systems with machine learning software workflows.'
+        description: 'Build practical AI systems with machine learning software workflows.',
+        has_favorite: false
       },
       score: 98,
       reason: 'Machine Learning best matches the practical AI goal.',
@@ -301,12 +316,13 @@ describe('POST /api/advisor/recommendations', () => {
     expect(res.body.data.limitations).toEqual(['Generated from local matching only.']);
     expect(res.body.data.recommendations).toHaveLength(2);
     expect(res.body.data.recommendations[0]).toEqual(expect.objectContaining({
-      course: {
+      course: expect.objectContaining({
         id: 1,
         title: 'Machine Learning',
         department: 'Artificial Intelligence',
-        description: 'Build practical AI systems with machine learning software workflows.'
-      },
+        description: 'Build practical AI systems with machine learning software workflows.',
+        has_favorite: false
+      }),
       evidence: expect.arrayContaining([
         'Course Department matches Artificial Intelligence',
         'Matches AI focus',
@@ -409,12 +425,13 @@ describe('POST /api/advisor/recommendations', () => {
       .send(advisorRequest());
 
     expect(res.statusCode).toBe(200);
-    expect(res.body.data.recommendations[0].course).toEqual({
+    expect(res.body.data.recommendations[0].course).toEqual(expect.objectContaining({
       id: 6,
       title: 'Foundations of Artificial Intelligence',
       department: 'Artificial Intelligence',
-      description: 'Introductory AI concepts for new learners.'
-    });
+      description: 'Introductory AI concepts for new learners.',
+      has_favorite: false
+    }));
     expect(res.body.data.recommendations[0].evidence).toContain(
       'Course Department matches Artificial Intelligence'
     );
@@ -424,6 +441,83 @@ describe('POST /api/advisor/recommendations', () => {
       'Course Department matches Artificial Intelligence'
     );
     expect(mockConn.query.mock.calls[0][0]).not.toContain('t.department = ?');
+    expect(mockConn.release).toHaveBeenCalled();
+  });
+
+  it('keeps Guest recommendations public while authenticated Students receive favorite and review evidence', async () => {
+    const mockConn = mockAdvisorConnection(advisorRows(), [
+      {
+        course_id: 1,
+        has_favorite: 1,
+        student_review_count: 1,
+        student_average_rating: 5
+      }
+    ]);
+
+    const guestRes = await request(app)
+      .post('/api/advisor/recommendations')
+      .send(advisorRequest());
+
+    const studentRes = await request(app)
+      .post('/api/advisor/recommendations')
+      .set('Cookie', [`auth_token=${studentToken()}`])
+      .send(advisorRequest());
+
+    expect(guestRes.statusCode).toBe(200);
+    expect(guestRes.body.data.personalization).toEqual({ active: false, signals: [] });
+    expect(guestRes.body.data.recommendations[0].evidence).not.toContain('Saved in your Favorites');
+    expect(guestRes.body.data.recommendations[0].course.has_favorite).toBe(false);
+
+    expect(studentRes.statusCode).toBe(200);
+    expect(studentRes.body.data.personalization).toEqual({
+      active: true,
+      signals: ['Favorites', 'Your review activity']
+    });
+    expect(studentRes.body.data.recommendations[0].course).toEqual(expect.objectContaining({
+      id: 1,
+      has_favorite: true
+    }));
+    expect(studentRes.body.data.recommendations[0].evidence).toEqual(expect.arrayContaining([
+      'Saved in your Favorites',
+      'You reviewed this Course with a 5.0 rating'
+    ]));
+    expect(studentRes.body.data.recommendations[0].score).toBeGreaterThan(
+      guestRes.body.data.recommendations[0].score
+    );
+    expect(mockConn.query).toHaveBeenCalledWith(
+      expect.stringContaining('LEFT JOIN Favorites f'),
+      [7, 7]
+    );
+    expect(mockConn.release).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not leak another Student favorite or review evidence into authenticated Advisor output', async () => {
+    const mockConn = mockAdvisorConnection(advisorRows(), [
+      {
+        course_id: 1,
+        has_favorite: 1,
+        student_review_count: 0,
+        student_average_rating: null
+      }
+    ]);
+
+    const res = await request(app)
+      .post('/api/advisor/recommendations')
+      .set('Cookie', [`auth_token=${studentToken({ id: 7, email: 'current@student.test' })}`])
+      .send(advisorRequest());
+
+    const evidenceSql = mockConn.query.mock.calls.find(([sql]) => String(sql).includes('LEFT JOIN Favorites f'))[0];
+    const outputText = JSON.stringify(res.body.data);
+
+    expect(res.statusCode).toBe(200);
+    expect(evidenceSql).toContain('f.user_id = ?');
+    expect(evidenceSql).toContain('r.user_id = ?');
+    expect(mockConn.query).toHaveBeenCalledWith(expect.stringContaining('LEFT JOIN Favorites f'), [7, 7]);
+    expect(res.body.data.recommendations[0].evidence).toContain('Saved in your Favorites');
+    expect(res.body.data.recommendations[1].evidence).not.toContain('Saved in your Favorites');
+    expect(outputText).not.toContain('current@student.test');
+    expect(outputText).not.toContain('other@student.test');
+    expect(outputText).not.toContain('user_id');
     expect(mockConn.release).toHaveBeenCalled();
   });
 });
