@@ -1,5 +1,6 @@
 <script setup>
 import { RouterLink } from 'vue-router'
+import { homeExploreLinks } from '../navigation.js'
 </script>
 
 <template>
@@ -22,14 +23,8 @@ import { RouterLink } from 'vue-router'
             Explore
           </button>
           <ul class="dropdown-menu shadow border-0">
-            <li>
-              <RouterLink class="dropdown-item" to="/courses">Browse courses</RouterLink>
-            </li>
-            <li>
-              <RouterLink class="dropdown-item" to="/tutors">Browse tutors</RouterLink>
-            </li>
-            <li>
-              <RouterLink class="dropdown-item" to="/departments">Browse departments</RouterLink>
+            <li v-for="link in homeExploreLinks" :key="link.to">
+              <RouterLink class="dropdown-item" :to="link.to">{{ link.label }}</RouterLink>
             </li>
           </ul>
         </div>

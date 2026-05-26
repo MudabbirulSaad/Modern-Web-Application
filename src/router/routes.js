@@ -30,6 +30,11 @@ export const routes = [
     component: () => import('../views/DepartmentsView.vue')
   },
   {
+    path: '/advisor',
+    name: 'advisor',
+    component: () => import('../views/AdvisorView.vue')
+  },
+  {
     path: '/register',
     name: 'register',
     component: () => import('../views/Register.vue'),

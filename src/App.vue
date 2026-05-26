@@ -2,6 +2,7 @@
 import { onMounted } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 import { useRouter } from 'vue-router'
+import { mainNavLinks } from './navigation.js'
 import { useUserStore } from './store/userStore'
 
 const userStore = useUserStore()
@@ -41,17 +42,8 @@ onMounted(() => {
       
       <div class="collapse navbar-collapse" id="navbarNav">
         <ul class="navbar-nav me-auto">
-          <li class="nav-item">
-            <RouterLink class="nav-link px-3" active-class="active" to="/">Home</RouterLink>
-          </li>
-          <li class="nav-item">
-            <RouterLink class="nav-link px-3" active-class="active" to="/courses">Courses</RouterLink>
-          </li>
-          <li class="nav-item">
-            <RouterLink class="nav-link px-3" active-class="active" to="/tutors">Tutors</RouterLink>
-          </li>
-          <li class="nav-item">
-            <RouterLink class="nav-link px-3" active-class="active" to="/departments">Departments</RouterLink>
+          <li v-for="link in mainNavLinks" :key="link.to" class="nav-item">
+            <RouterLink class="nav-link px-3" active-class="active" :to="link.to">{{ link.label }}</RouterLink>
           </li>
           <li v-if="userStore.isStudent" class="nav-item">
             <RouterLink class="nav-link px-3" active-class="active" to="/dashboard">Dashboard</RouterLink>
