@@ -1,5 +1,5 @@
 <template>
-  <div class="card rounded-4 shadow-sm h-100 base-card">
+  <div :class="buildBaseCardClasses({ stretch, interactive })">
     <div v-if="$slots.header" class="card-header bg-transparent border-0 pt-4 px-4">
       <slot name="header"></slot>
     </div>
@@ -13,9 +13,22 @@
 </template>
 
 <script setup>
+import { buildBaseCardClasses } from './baseCardPresentation.js'
+
+defineProps({
+  stretch: {
+    type: Boolean,
+    default: true
+  },
+  interactive: {
+    type: Boolean,
+    default: true
+  }
+})
+
 /**
  * BaseCard component providing consistent styling for Course and Tutor cards.
- * Enforces rounded-4 corners, shadow-sm, and brand-aligned hover effects.
+ * Defaults to equal-height cards and brand-aligned hover effects.
  */
 </script>
 
@@ -26,7 +39,7 @@
   background-color: var(--bs-card-bg);
 }
 
-.base-card:hover {
+.base-card--interactive:hover {
   transform: translateY(-5px);
   border-color: var(--swinburne-punch) !important;
 }
