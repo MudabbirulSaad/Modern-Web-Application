@@ -10,6 +10,16 @@ const createWorkflow = (overrides = {}) => {
     updateCourse: jest.fn(async () => ({ id: 2 })),
     deleteCourse: jest.fn(async () => null),
     fetchCourse: jest.fn(async () => ({ id: 2, tutor_ids: '1,3' })),
+    listUsers: jest.fn(async () => [
+      {
+        id: 1,
+        username: 'primaryadmin',
+        email: 'primary@example.edu',
+        role: 'admin',
+        is_primary_admin: true,
+        is_current_user: false
+      }
+    ]),
     ...overrides.adminApi
   }
   const reloadTutors = jest.fn(async () => null)
@@ -29,6 +39,42 @@ const createWorkflow = (overrides = {}) => {
 }
 
 describe('admin management workflow', () => {
+  it('loads the read-only user role directory for the Users tab', async () => {
+    const { adminApi, workflow } = createWorkflow()
+
+    await workflow.loadUsers()
+
+    expect(adminApi.listUsers).toHaveBeenCalledTimes(1)
+    expect(workflow.users.value).toEqual([
+      {
+        id: 1,
+        username: 'primaryadmin',
+        email: 'primary@example.edu',
+        role: 'admin',
+        is_primary_admin: true,
+        is_current_user: false
+      }
+    ])
+    expect(workflow.loadingUsers.value).toBe(false)
+    expect(workflow.userLoadError.value).toBe('')
+  })
+
+  it('reports user directory load failures without losing the Users tab state', async () => {
+    const { workflow } = createWorkflow({
+      adminApi: {
+        listUsers: jest.fn(async () => {
+          throw new Error('Forbidden')
+        })
+      }
+    })
+
+    await workflow.loadUsers()
+
+    expect(workflow.users.value).toEqual([])
+    expect(workflow.loadingUsers.value).toBe(false)
+    expect(workflow.userLoadError.value).toBe('Users are unavailable right now. Please try again shortly.')
+  })
+
   it('saves a new tutor, resets the form, and reloads tutors and courses', async () => {
     const { adminApi, reloadTutors, reloadCourses, workflow } = createWorkflow()
 

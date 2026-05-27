@@ -29,6 +29,14 @@ const listCourses = async ({ fetcher = fetch } = {}) => {
   return parseAdminResponse(response, 'Unable to load courses')
 }
 
+const listUsers = async ({ fetcher = fetch } = {}) => {
+  const response = await fetcher('/api/admin/users', {
+    credentials: 'include'
+  })
+
+  return parseAdminResponse(response, 'Unable to load users')
+}
+
 const fetchCourse = async ({ courseId, fetcher = fetch }) => {
   const response = await fetcher(`/api/courses/${courseId}`)
 
@@ -88,6 +96,7 @@ const deleteCourse = async ({ courseId, fetcher = fetch }) => {
 export const adminApi = {
   listTutors,
   listCourses,
+  listUsers,
   fetchCourse,
   createTutor,
   updateTutor,
@@ -100,6 +109,7 @@ export const adminApi = {
 export {
   listTutors,
   listCourses,
+  listUsers,
   fetchCourse,
   createTutor,
   updateTutor,

@@ -8,6 +8,7 @@ import courseRouter from './routes/courses.js';
 import reviewRouter from './routes/reviews.js';
 import favoriteRouter from './routes/favorites.js';
 import advisorRouter from './routes/advisor.js';
+import adminRouter from './routes/admin.js';
 
 export const createApp = () => {
   const app = express();
@@ -23,6 +24,7 @@ export const createApp = () => {
   app.use('/api', reviewRouter);
   app.use('/api', favoriteRouter);
   app.use('/api/advisor', advisorRouter);
+  app.use('/api/admin', adminRouter);
 
   return app;
 };

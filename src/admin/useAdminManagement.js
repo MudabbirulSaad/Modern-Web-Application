@@ -21,8 +21,10 @@ export const useAdminManagement = ({
 }) => {
   const tutors = ref([])
   const courses = ref([])
+  const users = ref([])
   const loadingTutors = ref(true)
   const loadingCourses = ref(true)
+  const loadingUsers = ref(true)
   const tutorForm = reactive({
     name: '',
     department: '',
@@ -40,6 +42,7 @@ export const useAdminManagement = ({
   const deletingCourseId = ref(null)
   const tutorFormError = ref('')
   const courseFormError = ref('')
+  const userLoadError = ref('')
   const error = ref('')
   const success = ref('')
   const editingTutorId = ref(null)
@@ -68,6 +71,20 @@ export const useAdminManagement = ({
       error.value = 'Courses are unavailable right now. Please try again shortly.'
     } finally {
       loadingCourses.value = false
+    }
+  }
+
+  const loadUsers = async () => {
+    loadingUsers.value = true
+    userLoadError.value = ''
+
+    try {
+      users.value = await adminApi.listUsers()
+    } catch (err) {
+      users.value = []
+      userLoadError.value = 'Users are unavailable right now. Please try again shortly.'
+    } finally {
+      loadingUsers.value = false
     }
   }
 
@@ -269,8 +286,10 @@ export const useAdminManagement = ({
   return {
     tutors,
     courses,
+    users,
     loadingTutors,
     loadingCourses,
+    loadingUsers,
     tutorForm,
     courseForm,
     tutorSaving,
@@ -279,6 +298,7 @@ export const useAdminManagement = ({
     deletingCourseId,
     tutorFormError,
     courseFormError,
+    userLoadError,
     error,
     success,
     editingTutorId,
@@ -287,6 +307,7 @@ export const useAdminManagement = ({
     editCourse,
     loadTutors,
     loadCourses,
+    loadUsers,
     resetTutorForm,
     resetCourseForm,
     saveTutor,

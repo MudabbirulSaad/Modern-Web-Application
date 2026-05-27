@@ -1724,6 +1724,102 @@ describe('POST /api/auth/register', () => {
   });
 });
 
+describe('GET /api/admin/users', () => {
+  const adminCookie = (overrides = {}) => {
+    const token = jwt.sign(
+      { id: 2, role: 'admin', ...overrides },
+      process.env.JWT_SECRET || 'development-jwt-secret',
+      { expiresIn: '1h' }
+    );
+
+    return [`auth_token=${token}`];
+  };
+
+  const studentCookie = () => adminCookie({ id: 3, role: 'student' });
+
+  it('returns a safe role directory for authenticated admins', async () => {
+    const mockUsers = [
+      {
+        id: 1,
+        username: 'primaryadmin',
+        email: 'primary@example.edu',
+        role: 'admin'
+      },
+      {
+        id: 2,
+        username: 'currentadmin',
+        email: 'current@example.edu',
+        role: 'admin'
+      },
+      {
+        id: 3,
+        username: 'standardstudent',
+        email: 'student@example.edu',
+        role: 'student'
+      }
+    ];
+    const mockConn = {
+      query: jest.fn().mockResolvedValue(mockUsers),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .get('/api/admin/users')
+      .set('Cookie', adminCookie());
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({
+      status: 'ok',
+      data: [
+        {
+          id: 1,
+          username: 'primaryadmin',
+          email: 'primary@example.edu',
+          role: 'admin',
+          is_primary_admin: true,
+          is_current_user: false
+        },
+        {
+          id: 2,
+          username: 'currentadmin',
+          email: 'current@example.edu',
+          role: 'admin',
+          is_primary_admin: false,
+          is_current_user: true
+        },
+        {
+          id: 3,
+          username: 'standardstudent',
+          email: 'student@example.edu',
+          role: 'student',
+          is_primary_admin: false,
+          is_current_user: false
+        }
+      ]
+    });
+    expect(JSON.stringify(res.body)).not.toContain('password');
+    expect(mockConn.query).toHaveBeenCalledWith(
+      'SELECT id, username, email, role FROM Users ORDER BY id ASC'
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('rejects guests and students with existing admin access errors', async () => {
+    const guestRes = await request(app).get('/api/admin/users');
+    const studentRes = await request(app)
+      .get('/api/admin/users')
+      .set('Cookie', studentCookie());
+
+    expect(guestRes.statusCode).toEqual(401);
+    expect(guestRes.body).toEqual({ status: 'error', message: 'Authentication required' });
+    expect(studentRes.statusCode).toEqual(403);
+    expect(studentRes.body).toEqual({ status: 'error', message: 'Admin access required' });
+  });
+});
+
 describe('POST /api/auth/login', () => {
   it('should log in a user and issue an HttpOnly JWT cookie', async () => {
     const passwordHash = await bcrypt.hash('securepass123', 12);

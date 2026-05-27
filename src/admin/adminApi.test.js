@@ -6,6 +6,7 @@ import {
   deleteTutor,
   fetchCourse,
   listCourses,
+  listUsers,
   listTutors,
   updateCourse,
   updateTutor
@@ -127,5 +128,31 @@ describe('admin API adapter', () => {
       bio: 'Teaches algorithms.',
       fetcher
     })).rejects.toThrow('Duplicate tutor name')
+  })
+
+  it('loads admin users through the admin-only directory endpoint', async () => {
+    const users = [
+      {
+        id: 1,
+        username: 'primaryadmin',
+        email: 'primary@example.edu',
+        role: 'admin',
+        is_primary_admin: true,
+        is_current_user: false
+      }
+    ]
+    const fetcher = jest.fn(async () => jsonResponse({ body: { data: users } }))
+
+    await expect(listUsers({ fetcher })).resolves.toEqual(users)
+
+    expect(fetcher).toHaveBeenCalledWith('/api/admin/users', {
+      credentials: 'include'
+    })
+  })
+
+  it('maps admin user loading failures to a useful fallback message', async () => {
+    const fetcher = jest.fn(async () => jsonResponse({ ok: false, body: {} }))
+
+    await expect(listUsers({ fetcher })).rejects.toThrow('Unable to load users')
   })
 })

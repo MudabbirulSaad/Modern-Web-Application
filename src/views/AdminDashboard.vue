@@ -4,6 +4,7 @@ import { useAdminManagement } from '../admin/useAdminManagement.js'
 import {
   filterAdminCourseRecords,
   filterAdminTutorRecords,
+  filterAdminUserRecords,
   summarizeVisibleAdminRecords
 } from '../admin/adminRecordFiltering.js'
 import BaseCard from '../components/common/BaseCard.vue'
@@ -13,13 +14,16 @@ const activeAdminTab = ref('courses')
 const tutorSearch = ref('')
 const courseRecordSearch = ref('')
 const tutorRecordSearch = ref('')
+const userRecordSearch = ref('')
 const TUTOR_SEARCH_RESULT_LIMIT = 8
 
 const {
   tutors,
   courses,
+  users,
   loadingTutors,
   loadingCourses,
+  loadingUsers,
   tutorForm,
   courseForm,
   tutorSaving,
@@ -28,6 +32,7 @@ const {
   deletingCourseId,
   tutorFormError,
   courseFormError,
+  userLoadError,
   error,
   success,
   editingTutorId,
@@ -41,21 +46,26 @@ const {
   deleteTutor,
   deleteCourse,
   loadTutors,
-  loadCourses
+  loadCourses,
+  loadUsers
 } = useAdminManagement({})
 
 const isEditingTutor = computed(() => editingTutorId.value !== null)
 const isEditingCourse = computed(() => editingCourseId.value !== null)
 const hasTutors = computed(() => tutors.value.length > 0)
 const hasCourses = computed(() => courses.value.length > 0)
+const hasUsers = computed(() => users.value.length > 0)
 const tutorSearchTerm = computed(() => tutorSearch.value.trim())
 const hasTutorSearch = computed(() => tutorSearchTerm.value.length > 0)
 const courseRecordSearchTerm = computed(() => courseRecordSearch.value.trim())
 const tutorRecordSearchTerm = computed(() => tutorRecordSearch.value.trim())
+const userRecordSearchTerm = computed(() => userRecordSearch.value.trim())
 const filteredCourses = computed(() => filterAdminCourseRecords(courses.value, courseRecordSearchTerm.value))
 const filteredTutors = computed(() => filterAdminTutorRecords(tutors.value, tutorRecordSearchTerm.value))
+const filteredUsers = computed(() => filterAdminUserRecords(users.value, userRecordSearchTerm.value))
 const courseRecordSummary = computed(() => summarizeVisibleAdminRecords(filteredCourses.value, courses.value))
 const tutorRecordSummary = computed(() => summarizeVisibleAdminRecords(filteredTutors.value, tutors.value))
+const userRecordSummary = computed(() => summarizeVisibleAdminRecords(filteredUsers.value, users.value))
 const courseTutorNames = (course) => String(course.tutor_names || '').trim()
 const courseTutorCount = (course) => {
   const names = courseTutorNames(course)
@@ -114,6 +124,7 @@ const removeCourseTutor = (tutor) => {
 onMounted(() => {
   loadTutors()
   loadCourses()
+  loadUsers()
 })
 </script>
 
@@ -159,6 +170,17 @@ onMounted(() => {
         @click="activeAdminTab = 'tutors'"
       >
         Tutors
+      </button>
+      <button
+        class="admin-tab"
+        :class="{ active: activeAdminTab === 'users' }"
+        type="button"
+        role="tab"
+        :aria-selected="activeAdminTab === 'users'"
+        aria-controls="user-admin-panel"
+        @click="activeAdminTab = 'users'"
+      >
+        Users
       </button>
     </div>
 
@@ -553,6 +575,78 @@ onMounted(() => {
             </BaseCard>
           </div>
         </div>
+      </section>
+
+      <section
+        v-show="activeAdminTab === 'users'"
+        id="user-admin-panel"
+        aria-labelledby="user-admin-heading"
+        role="tabpanel"
+      >
+        <h2 id="user-admin-heading" class="h3 mb-3">User role management</h2>
+        <BaseCard :stretch="false" :interactive="false">
+          <template #header>
+            <h3 class="h4 mb-0">User records</h3>
+          </template>
+
+          <div class="admin-record-toolbar">
+            <div class="min-w-0 flex-grow-1">
+              <label class="form-label small text-body-secondary" for="user-record-search">
+                Search User records
+              </label>
+              <input
+                id="user-record-search"
+                v-model="userRecordSearch"
+                class="form-control"
+                type="search"
+                autocomplete="off"
+                placeholder="Search by username or email"
+              >
+            </div>
+            <span class="badge text-bg-light admin-record-count">{{ userRecordSummary }}</span>
+          </div>
+
+          <div v-if="loadingUsers" class="placeholder-glow" aria-label="Loading users">
+            <span class="placeholder col-8 mb-3"></span>
+            <span class="placeholder col-12"></span>
+            <span class="placeholder col-11"></span>
+            <span class="placeholder col-9"></span>
+          </div>
+
+          <div v-else-if="userLoadError" class="alert alert-danger mb-0" role="alert">
+            {{ userLoadError }}
+          </div>
+
+          <div v-else-if="!hasUsers" class="alert alert-secondary mb-0" role="status">
+            No users are available yet.
+          </div>
+
+          <div v-else-if="filteredUsers.length === 0" class="alert alert-secondary mb-0" role="status">
+            No User records match "{{ userRecordSearchTerm }}".
+          </div>
+
+          <div v-else class="admin-record-list" aria-label="User records">
+            <article
+              v-for="user in filteredUsers"
+              :key="user.id"
+              class="admin-management-row"
+            >
+              <div class="admin-management-row__body">
+                <div class="admin-management-row__heading">
+                  <div class="d-flex flex-wrap align-items-center gap-2 min-w-0">
+                    <h4 class="h6 mb-0 text-truncate">{{ user.username }}</h4>
+                    <span v-if="user.is_primary_admin" class="badge text-bg-primary">Primary Admin</span>
+                    <span v-if="user.is_current_user" class="badge text-bg-light admin-record-count">You</span>
+                  </div>
+                  <p class="small text-body-secondary mb-0 text-truncate">{{ user.email }}</p>
+                </div>
+                <p class="small text-body-secondary mb-0">
+                  Role: <strong class="text-body text-capitalize">{{ user.role }}</strong>
+                </p>
+              </div>
+            </article>
+          </div>
+        </BaseCard>
       </section>
     </div>
   </section>

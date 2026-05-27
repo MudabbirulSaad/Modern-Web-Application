@@ -18,6 +18,11 @@ export const filterAdminTutorRecords = (tutors, searchTerm) => tutors.filter((tu
   'department'
 ], searchTerm))
 
+export const filterAdminUserRecords = (users, searchTerm) => users.filter((user) => matchesSearch(user, [
+  'username',
+  'email'
+], searchTerm))
+
 export const summarizeVisibleAdminRecords = (visibleRecords, allRecords) => (
   `Showing ${visibleRecords.length} of ${allRecords.length} records`
 )

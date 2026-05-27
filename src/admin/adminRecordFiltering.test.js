@@ -2,6 +2,7 @@ import { describe, expect, it } from '@jest/globals'
 import {
   filterAdminCourseRecords,
   filterAdminTutorRecords,
+  filterAdminUserRecords,
   summarizeVisibleAdminRecords
 } from './adminRecordFiltering.js'
 
@@ -37,6 +38,21 @@ const tutors = [
   }
 ]
 
+const users = [
+  {
+    id: 1,
+    username: 'primaryadmin',
+    email: 'primary@example.edu',
+    role: 'admin'
+  },
+  {
+    id: 2,
+    username: 'standardstudent',
+    email: 'student@example.edu',
+    role: 'student'
+  }
+]
+
 describe('admin record filtering', () => {
   it('filters Course records by title or department without matching description or Tutor names', () => {
     expect(filterAdminCourseRecords(courses, 'computer systems')).toEqual([courses[0]])
@@ -51,5 +67,14 @@ describe('admin record filtering', () => {
     expect(filterAdminTutorRecords(tutors, 'computing technologies')).toEqual([tutors[0]])
     expect(filterAdminTutorRecords(tutors, 'database')).toEqual([])
     expect(filterAdminTutorRecords(tutors, '')).toEqual(tutors)
+  })
+
+  it('filters User records by username or email without matching roles', () => {
+    expect(filterAdminUserRecords(users, 'primary')).toEqual([users[0]])
+    expect(filterAdminUserRecords(users, 'student@example.edu')).toEqual([users[1]])
+    expect(filterAdminUserRecords(users, 'admin')).toEqual([users[0]])
+    expect(filterAdminUserRecords(users, 'student')).toEqual([users[1]])
+    expect(filterAdminUserRecords(users, '')).toEqual(users)
+    expect(summarizeVisibleAdminRecords([users[0]], users)).toBe('Showing 1 of 2 records')
   })
 })
