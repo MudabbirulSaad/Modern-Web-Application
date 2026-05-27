@@ -17,6 +17,7 @@ describe('tutor affiliation language', () => {
 
     expect(adminDashboard).toContain('Staff affiliation or academic unit')
     expect(adminDashboard).toContain('This is shown on tutor profiles and is separate from Course Department discovery.')
-    expect(adminDashboard).toContain('<th scope="col">Staff affiliation</th>')
+    expect(adminDashboard).toContain('Staff affiliation: {{ tutor.department }}')
+    expect(adminDashboard).toContain('placeholder="Search by name or staff affiliation"')
   })
 })

@@ -1,11 +1,18 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useAdminManagement } from '../admin/useAdminManagement.js'
+import {
+  filterAdminCourseRecords,
+  filterAdminTutorRecords,
+  summarizeVisibleAdminRecords
+} from '../admin/adminRecordFiltering.js'
 import BaseCard from '../components/common/BaseCard.vue'
 import { createTutorAssignmentState } from './adminTutorAssignment.js'
 
 const activeAdminTab = ref('courses')
 const tutorSearch = ref('')
+const courseRecordSearch = ref('')
+const tutorRecordSearch = ref('')
 const TUTOR_SEARCH_RESULT_LIMIT = 8
 
 const {
@@ -43,6 +50,22 @@ const hasTutors = computed(() => tutors.value.length > 0)
 const hasCourses = computed(() => courses.value.length > 0)
 const tutorSearchTerm = computed(() => tutorSearch.value.trim())
 const hasTutorSearch = computed(() => tutorSearchTerm.value.length > 0)
+const courseRecordSearchTerm = computed(() => courseRecordSearch.value.trim())
+const tutorRecordSearchTerm = computed(() => tutorRecordSearch.value.trim())
+const filteredCourses = computed(() => filterAdminCourseRecords(courses.value, courseRecordSearchTerm.value))
+const filteredTutors = computed(() => filterAdminTutorRecords(tutors.value, tutorRecordSearchTerm.value))
+const courseRecordSummary = computed(() => summarizeVisibleAdminRecords(filteredCourses.value, courses.value))
+const tutorRecordSummary = computed(() => summarizeVisibleAdminRecords(filteredTutors.value, tutors.value))
+const courseTutorNames = (course) => String(course.tutor_names || '').trim()
+const courseTutorCount = (course) => {
+  const names = courseTutorNames(course)
+
+  if (!names) {
+    return 0
+  }
+
+  return names.split(',').map((name) => name.trim()).filter(Boolean).length
+}
 const courseTutorAssignment = computed(() => createTutorAssignmentState({
   tutors: tutors.value,
   selectedTutorIds: courseForm.tutorIds,
@@ -149,7 +172,7 @@ onMounted(() => {
         <h2 id="course-admin-heading" class="h3 mb-3">Course management</h2>
         <div class="row g-4">
           <div class="col-12 col-lg-5">
-            <BaseCard>
+            <BaseCard class="admin-form-card" :stretch="false" :interactive="false">
               <template #header>
                 <h3 class="h4 mb-0">{{ isEditingCourse ? 'Edit course' : 'New course' }}</h3>
               </template>
@@ -300,10 +323,27 @@ onMounted(() => {
           </div>
 
           <div class="col-12 col-lg-7">
-            <BaseCard>
+            <BaseCard :stretch="false" :interactive="false">
               <template #header>
                 <h3 class="h4 mb-0">Course records</h3>
               </template>
+
+              <div class="admin-record-toolbar">
+                <div class="min-w-0 flex-grow-1">
+                  <label class="form-label small text-body-secondary" for="course-record-search">
+                    Search Course records
+                  </label>
+                  <input
+                    id="course-record-search"
+                    v-model="courseRecordSearch"
+                    class="form-control"
+                    type="search"
+                    autocomplete="off"
+                    placeholder="Search by title or department"
+                  >
+                </div>
+                <span class="badge text-bg-light admin-record-count">{{ courseRecordSummary }}</span>
+              </div>
 
               <div v-if="loadingCourses" class="placeholder-glow" aria-label="Loading courses">
                 <span class="placeholder col-8 mb-3"></span>
@@ -316,45 +356,47 @@ onMounted(() => {
                 No courses are available yet.
               </div>
 
-              <div v-else class="table-responsive">
-                <table class="table align-middle mb-0">
-                  <thead>
-                    <tr>
-                      <th scope="col">Course</th>
-                      <th scope="col">Tutors</th>
-                      <th class="text-end" scope="col">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="course in courses" :key="course.id">
-                      <td>
-                        <p class="fw-bold mb-1">{{ course.title }}</p>
-                        <p class="small text-body-secondary mb-0 record-summary">{{ course.description }}</p>
-                      </td>
-                      <td>{{ course.tutor_names || 'Unassigned' }}</td>
-                      <td>
-                        <div class="d-flex justify-content-end gap-2">
-                          <button class="btn btn-directory-action-secondary btn-sm" type="button" @click="editCourse(course)">
-                            Edit
-                          </button>
-                          <button
-                            class="btn btn-directory-action-danger btn-sm"
-                            type="button"
-                            :disabled="deletingCourseId === course.id"
-                            @click="deleteCourse(course)"
-                          >
-                            <span
-                              v-if="deletingCourseId === course.id"
-                              class="spinner-border spinner-border-sm me-2"
-                              aria-hidden="true"
-                            ></span>
-                            {{ deletingCourseId === course.id ? 'Deleting' : 'Delete' }}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div v-else-if="filteredCourses.length === 0" class="alert alert-secondary mb-0" role="status">
+                No Course records match "{{ courseRecordSearchTerm }}".
+              </div>
+
+              <div v-else class="admin-record-list" aria-label="Course records">
+                <article
+                  v-for="course in filteredCourses"
+                  :key="course.id"
+                  class="admin-management-row"
+                >
+                  <div class="admin-management-row__body">
+                    <div class="admin-management-row__heading">
+                      <h4 class="h6 mb-0 text-truncate">{{ course.title }}</h4>
+                      <p class="small text-body-secondary mb-0 text-truncate">
+                        {{ course.department }} · {{ courseTutorCount(course) }} tutor{{ courseTutorCount(course) === 1 ? '' : 's' }}
+                      </p>
+                    </div>
+                    <p class="small text-body-secondary mb-0 record-summary admin-line-clamp">{{ course.description }}</p>
+                    <p class="small mb-0 text-body-secondary admin-line-clamp">
+                      <strong class="text-body">Tutors:</strong> {{ courseTutorNames(course) || 'Unassigned' }}
+                    </p>
+                  </div>
+                  <div class="admin-management-row__actions" aria-label="Course record actions">
+                    <button class="btn btn-directory-action-secondary btn-sm" type="button" @click="editCourse(course)">
+                      Edit
+                    </button>
+                    <button
+                      class="btn btn-directory-action-danger btn-sm"
+                      type="button"
+                      :disabled="deletingCourseId === course.id"
+                      @click="deleteCourse(course)"
+                    >
+                      <span
+                        v-if="deletingCourseId === course.id"
+                        class="spinner-border spinner-border-sm me-2"
+                        aria-hidden="true"
+                      ></span>
+                      {{ deletingCourseId === course.id ? 'Deleting' : 'Delete' }}
+                    </button>
+                  </div>
+                </article>
               </div>
             </BaseCard>
           </div>
@@ -370,7 +412,7 @@ onMounted(() => {
         <h2 id="tutor-admin-heading" class="h3 mb-3">Tutor management</h2>
         <div class="row g-4">
           <div class="col-12 col-lg-5">
-            <BaseCard>
+            <BaseCard class="admin-form-card" :stretch="false" :interactive="false">
               <template #header>
                 <h3 class="h4 mb-0">{{ isEditingTutor ? 'Edit tutor' : 'New tutor' }}</h3>
               </template>
@@ -436,10 +478,27 @@ onMounted(() => {
           </div>
 
           <div class="col-12 col-lg-7">
-            <BaseCard>
+            <BaseCard :stretch="false" :interactive="false">
               <template #header>
                 <h3 class="h4 mb-0">Tutor records</h3>
               </template>
+
+              <div class="admin-record-toolbar">
+                <div class="min-w-0 flex-grow-1">
+                  <label class="form-label small text-body-secondary" for="tutor-record-search">
+                    Search Tutor records
+                  </label>
+                  <input
+                    id="tutor-record-search"
+                    v-model="tutorRecordSearch"
+                    class="form-control"
+                    type="search"
+                    autocomplete="off"
+                    placeholder="Search by name or staff affiliation"
+                  >
+                </div>
+                <span class="badge text-bg-light admin-record-count">{{ tutorRecordSummary }}</span>
+              </div>
 
               <div v-if="loadingTutors" class="placeholder-glow" aria-label="Loading tutors">
                 <span class="placeholder col-8 mb-3"></span>
@@ -452,45 +511,44 @@ onMounted(() => {
                 No tutors are available yet.
               </div>
 
-              <div v-else class="table-responsive">
-                <table class="table align-middle mb-0">
-                  <thead>
-                    <tr>
-                      <th scope="col">Tutor</th>
-                      <th scope="col">Staff affiliation</th>
-                      <th class="text-end" scope="col">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="tutor in tutors" :key="tutor.id">
-                      <td>
-                        <p class="fw-bold mb-1">{{ tutor.name }}</p>
-                        <p class="small text-body-secondary mb-0 record-summary">{{ tutor.bio }}</p>
-                      </td>
-                      <td>{{ tutor.department }}</td>
-                      <td>
-                        <div class="d-flex justify-content-end gap-2">
-                          <button class="btn btn-directory-action-secondary btn-sm" type="button" @click="editTutor(tutor)">
-                            Edit
-                          </button>
-                          <button
-                            class="btn btn-directory-action-danger btn-sm"
-                            type="button"
-                            :disabled="deletingTutorId === tutor.id"
-                            @click="deleteTutor(tutor)"
-                          >
-                            <span
-                              v-if="deletingTutorId === tutor.id"
-                              class="spinner-border spinner-border-sm me-2"
-                              aria-hidden="true"
-                            ></span>
-                            {{ deletingTutorId === tutor.id ? 'Deleting' : 'Delete' }}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div v-else-if="filteredTutors.length === 0" class="alert alert-secondary mb-0" role="status">
+                No Tutor records match "{{ tutorRecordSearchTerm }}".
+              </div>
+
+              <div v-else class="admin-record-list" aria-label="Tutor records">
+                <article
+                  v-for="tutor in filteredTutors"
+                  :key="tutor.id"
+                  class="admin-management-row"
+                >
+                  <div class="admin-management-row__body">
+                    <div class="admin-management-row__heading">
+                      <h4 class="h6 mb-0 text-truncate">{{ tutor.name }}</h4>
+                      <p class="small text-body-secondary mb-0 text-truncate">
+                        Staff affiliation: {{ tutor.department }}
+                      </p>
+                    </div>
+                    <p class="small text-body-secondary mb-0 record-summary admin-line-clamp">{{ tutor.bio }}</p>
+                  </div>
+                  <div class="admin-management-row__actions" aria-label="Tutor record actions">
+                    <button class="btn btn-directory-action-secondary btn-sm" type="button" @click="editTutor(tutor)">
+                      Edit
+                    </button>
+                    <button
+                      class="btn btn-directory-action-danger btn-sm"
+                      type="button"
+                      :disabled="deletingTutorId === tutor.id"
+                      @click="deleteTutor(tutor)"
+                    >
+                      <span
+                        v-if="deletingTutorId === tutor.id"
+                        class="spinner-border spinner-border-sm me-2"
+                        aria-hidden="true"
+                      ></span>
+                      {{ deletingTutorId === tutor.id ? 'Deleting' : 'Delete' }}
+                    </button>
+                  </div>
+                </article>
               </div>
             </BaseCard>
           </div>
@@ -508,6 +566,68 @@ onMounted(() => {
 
 .record-summary {
   max-width: 34rem;
+}
+
+.admin-record-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.admin-record-count {
+  flex: 0 0 auto;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--bs-border-color);
+  color: var(--bs-body-color) !important;
+  background: var(--bs-tertiary-bg) !important;
+}
+
+.admin-record-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.admin-management-row {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--bs-border-color);
+}
+
+.admin-management-row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.admin-management-row__body {
+  display: grid;
+  min-width: 0;
+  gap: 0.35rem;
+}
+
+.admin-management-row__heading {
+  display: grid;
+  min-width: 0;
+  gap: 0.15rem;
+}
+
+.admin-management-row__actions {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.admin-line-clamp {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .course-tutor-assignment {
@@ -639,5 +759,29 @@ onMounted(() => {
 
 [data-bs-theme="dark"] .selected-tutor-remove {
   background: var(--bs-surface-color);
+}
+
+@media (min-width: 768px) {
+  .admin-form-card {
+    position: sticky;
+    top: 1rem;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .admin-record-toolbar,
+  .admin-management-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-record-count,
+  .admin-management-row__actions {
+    width: 100%;
+  }
+
+  .admin-management-row__actions .btn {
+    flex: 1 1 0;
+  }
 }
 </style>
