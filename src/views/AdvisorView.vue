@@ -142,14 +142,13 @@ const toggleFavorite = favoriteWorkflow.toggleFavorite
       </div>
 
       <div class="col-12 col-xl-8">
-        <div v-if="advisor.loading.value" class="row g-4" aria-label="Loading advisor recommendations">
-          <div v-for="index in 2" :key="index" class="col-12 col-lg-6">
-            <BaseCard>
+        <div v-if="advisor.loading.value" class="advisor-recommendation-list" aria-label="Loading advisor recommendations">
+          <div v-for="index in 2" :key="index">
+            <BaseCard :stretch="false" :interactive="false">
               <div class="placeholder-glow">
-                <span class="placeholder col-8 mb-3"></span>
-                <span class="placeholder col-5 mb-4"></span>
-                <span class="placeholder col-12"></span>
-                <span class="placeholder col-10"></span>
+                <span class="placeholder col-3 me-3"></span>
+                <span class="placeholder col-5 mb-3"></span>
+                <span class="placeholder col-12 mb-2"></span>
                 <span class="placeholder col-7"></span>
               </div>
             </BaseCard>
@@ -180,24 +179,24 @@ const toggleFavorite = favoriteWorkflow.toggleFavorite
 
           <div
             v-if="statusNotice"
-            class="alert mb-4"
-            :class="statusNotice.tone === 'warning' ? 'alert-warning' : 'alert-info'"
+            class="advisor-notice"
+            :class="`advisor-notice--${statusNotice.tone}`"
             role="status"
           >
             <strong>{{ statusNotice.title }}</strong>
-            <ul class="mb-0 mt-2">
+            <ul class="advisor-notice__messages">
               <li v-for="message in statusNotice.messages" :key="message">{{ message }}</li>
             </ul>
           </div>
 
           <div
             v-if="personalizationNotice"
-            class="alert mb-4"
-            :class="personalizationNotice.tone === 'info' ? 'alert-info' : 'alert-secondary'"
+            class="advisor-notice"
+            :class="`advisor-notice--${personalizationNotice.tone}`"
             role="status"
           >
             <strong>{{ personalizationNotice.title }}</strong>
-            <ul class="mb-0 mt-2">
+            <ul class="advisor-notice__messages">
               <li v-for="message in personalizationNotice.messages" :key="message">{{ message }}</li>
             </ul>
           </div>
@@ -206,45 +205,50 @@ const toggleFavorite = favoriteWorkflow.toggleFavorite
             No Course recommendations are available for these preferences yet.
           </div>
 
-          <div v-else class="row g-4">
-            <div v-if="favoriteError" class="col-12">
+          <div v-else class="advisor-recommendation-list">
+            <div v-if="favoriteError">
               <div class="alert alert-warning mb-0" role="alert">{{ favoriteError }}</div>
             </div>
 
-            <div v-for="card in cards" :key="card.key" class="col-12 col-lg-6">
-              <BaseCard>
-                <template #header>
-                  <div class="d-flex justify-content-between gap-3 align-items-center">
+            <article v-for="card in cards" :key="card.key" class="advisor-recommendation-record">
+              <BaseCard :stretch="false" :interactive="false">
+                <div class="advisor-recommendation-record__topline">
+                  <div class="advisor-recommendation-record__title">
                     <span class="badge rounded-pill text-bg-light border">{{ card.department }}</span>
+                    <h3 class="h5 mb-0">{{ card.courseTitle }}</h3>
+                  </div>
+                  <div class="advisor-recommendation-record__actions" aria-label="Course recommendation actions">
                     <FavoriteButton
                       v-if="userStore.isStudent"
                       :active="card.hasFavorite"
                       :loading="isUpdatingFavorite(card.courseId)"
                       @toggle="toggleFavorite(card.favoriteItem)"
                     />
-                  </div>
-                </template>
-
-                <h3 class="h4 mb-3">{{ card.courseTitle }}</h3>
-                <p class="text-body-secondary mb-3">{{ card.description }}</p>
-                <p class="mb-3">{{ card.reason }}</p>
-
-                <div class="mb-3">
-                  <p class="small text-uppercase fw-bold text-body-secondary mb-2">Evidence</p>
-                  <div class="advisor-chip-group">
-                    <span
-                      v-for="signal in card.evidence"
-                      :key="signal"
-                      class="badge rounded-pill text-bg-light border"
-                    >
-                      {{ signal }}
-                    </span>
+                    <RouterLink class="btn btn-directory-action btn-sm" :to="card.courseTo">
+                      View course
+                    </RouterLink>
                   </div>
                 </div>
 
-                <div class="mb-3">
-                  <p class="small text-uppercase fw-bold text-body-secondary mb-2">Supporting Tutors</p>
-                  <div v-if="card.tutors.length" class="d-flex flex-column gap-2">
+                <p class="advisor-recommendation-record__description text-body-secondary mb-2">
+                  {{ card.description }}
+                </p>
+                <p class="advisor-recommendation-record__reason mb-2">{{ card.reason }}</p>
+
+                <div class="advisor-recommendation-record__meta">
+                  <span class="small text-uppercase fw-bold text-body-secondary">Evidence</span>
+                  <span
+                    v-for="signal in card.evidence"
+                    :key="signal"
+                    class="badge rounded-pill text-bg-light border"
+                  >
+                    {{ signal }}
+                  </span>
+                </div>
+
+                <div class="advisor-recommendation-record__tutors">
+                  <span class="small text-uppercase fw-bold text-body-secondary">Tutors</span>
+                  <template v-if="card.tutors.length">
                     <RouterLink
                       v-for="tutor in card.tutors"
                       :key="tutor.id"
@@ -254,24 +258,16 @@ const toggleFavorite = favoriteWorkflow.toggleFavorite
                       <span class="fw-bold">{{ tutor.name }}</span>
                       <span class="text-body-secondary">{{ tutor.department }}</span>
                     </RouterLink>
-                  </div>
-                  <p v-else class="text-body-secondary mb-0">Tutors to be announced</p>
+                  </template>
+                  <span v-else class="text-body-secondary">Tutors to be announced</span>
                 </div>
 
-                <div v-if="card.limitations.length" class="alert alert-secondary py-2 small" role="status">
-                  <p class="fw-bold mb-1">Limitations</p>
-                  <ul class="mb-0">
-                    <li v-for="limitation in card.limitations" :key="limitation">{{ limitation }}</li>
-                  </ul>
-                </div>
-
-                <template #footer>
-                  <RouterLink class="btn btn-directory-action btn-sm" :to="card.courseTo">
-                    View course
-                  </RouterLink>
-                </template>
+                <p v-if="card.limitations.length" class="advisor-recommendation-record__note text-body-secondary mb-0">
+                  <span class="fw-bold">Note:</span>
+                  {{ card.limitations.join(' ') }}
+                </p>
               </BaseCard>
-            </div>
+            </article>
           </div>
         </div>
       </div>
@@ -303,6 +299,90 @@ const toggleFavorite = favoriteWorkflow.toggleFavorite
 .advisor-chip {
   font-weight: 700;
   min-width: 4.6rem;
+}
+
+.advisor-recommendation-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.advisor-notice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: baseline;
+  padding: 0.65rem 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.925rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.5rem;
+  background-color: rgba(var(--swinburne-punch-rgb), 0.06);
+}
+
+.advisor-notice--secondary {
+  background-color: rgba(var(--bs-secondary-rgb), 0.08);
+}
+
+.advisor-notice__messages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.advisor-recommendation-record__topline,
+.advisor-recommendation-record__title,
+.advisor-recommendation-record__actions,
+.advisor-recommendation-record__meta,
+.advisor-recommendation-record__tutors {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.advisor-recommendation-record__topline {
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.advisor-recommendation-record__title,
+.advisor-recommendation-record__meta,
+.advisor-recommendation-record__tutors {
+  flex-wrap: wrap;
+}
+
+.advisor-recommendation-record__actions {
+  flex-shrink: 0;
+}
+
+.advisor-recommendation-record__description,
+.advisor-recommendation-record__reason {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+}
+
+.advisor-recommendation-record__description {
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.advisor-recommendation-record__reason {
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.advisor-recommendation-record__meta,
+.advisor-recommendation-record__tutors,
+.advisor-recommendation-record__note {
+  font-size: 0.925rem;
+}
+
+.advisor-recommendation-record__meta,
+.advisor-recommendation-record__tutors {
+  margin-bottom: 0.5rem;
 }
 
 .advisor-segment {
@@ -340,14 +420,11 @@ const toggleFavorite = favoriteWorkflow.toggleFavorite
 }
 
 .advisor-tutor-link {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.35rem 1rem;
-  padding: 0.65rem 0;
+  gap: 0.2rem 0.35rem;
   color: inherit;
   text-decoration: none;
-  border-bottom: 1px solid var(--bs-border-color);
 }
 
 .advisor-tutor-link:hover {
@@ -363,7 +440,20 @@ const toggleFavorite = favoriteWorkflow.toggleFavorite
   background-color: rgba(var(--swinburne-punch-rgb), 0.18) !important;
 }
 
+@media (min-width: 768px) {
+  .advisor-panel {
+    position: sticky;
+    top: 1rem;
+  }
+}
+
 @media (max-width: 575.98px) {
+  .advisor-recommendation-record__topline,
+  .advisor-recommendation-record__actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .advisor-segment {
     grid-template-columns: 1fr;
   }
