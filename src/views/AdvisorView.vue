@@ -279,6 +279,7 @@ const toggleFavorite = favoriteWorkflow.toggleFavorite
 .advisor-page {
   max-width: 1180px;
   margin: 0 auto;
+  overflow-x: clip;
 }
 
 .advisor-page__header {
@@ -354,6 +355,7 @@ const toggleFavorite = favoriteWorkflow.toggleFavorite
 }
 
 .advisor-recommendation-record__actions {
+  flex-wrap: wrap;
   flex-shrink: 0;
 }
 

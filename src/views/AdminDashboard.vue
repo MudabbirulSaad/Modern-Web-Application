@@ -562,6 +562,7 @@ onMounted(() => {
 .admin-dashboard {
   max-width: 1180px;
   margin: 0 auto;
+  overflow-x: clip;
 }
 
 .record-summary {
@@ -619,6 +620,7 @@ onMounted(() => {
 .admin-management-row__actions {
   display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.5rem;
 }
