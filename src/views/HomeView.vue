@@ -1,6 +1,21 @@
 <script setup>
+import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { homeExploreLinks } from '../navigation.js'
+import { useUserStore } from '../store/userStore'
+
+const userStore = useUserStore()
+const homeSecondaryAction = computed(() => {
+  if (userStore.isAdmin) {
+    return { label: 'Admin dashboard', to: '/admin' }
+  }
+
+  if (userStore.isAuthenticated) {
+    return { label: 'Dashboard', to: '/dashboard' }
+  }
+
+  return { label: 'Register', to: '/register' }
+})
 </script>
 
 <template>
@@ -29,8 +44,8 @@ import { homeExploreLinks } from '../navigation.js'
           </ul>
         </div>
 
-        <RouterLink class="btn btn-outline-primary btn-lg" to="/register">
-          Register
+        <RouterLink class="btn btn-outline-primary btn-lg" :to="homeSecondaryAction.to">
+          {{ homeSecondaryAction.label }}
         </RouterLink>
       </div>
     </div>
@@ -73,7 +88,8 @@ import { homeExploreLinks } from '../navigation.js'
   background:
     linear-gradient(110deg, rgba(var(--swinburne-punch-rgb), 0.09), transparent 32%),
     linear-gradient(180deg, #ffffff 0%, #f8f9fa 76%, var(--bs-body-bg) 100%);
-  overflow: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
   position: relative;
 }
 
@@ -103,7 +119,7 @@ import { homeExploreLinks } from '../navigation.js'
 
 .home-hero__content {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -141,10 +157,16 @@ import { homeExploreLinks } from '../navigation.js'
   align-items: center;
 }
 
+.home-hero__actions .dropdown {
+  position: relative;
+  z-index: 3;
+}
+
 .home-hero__actions .dropdown-menu {
   border-radius: 0.75rem;
   min-width: 13rem;
   padding: 0.45rem;
+  z-index: 1055;
 }
 
 .home-hero__actions .dropdown-item {

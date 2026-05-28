@@ -14,6 +14,7 @@ describe('Admin Dashboard Users tab', () => {
     expect(adminDashboard).toContain('{{ userRecordSummary }}')
     expect(adminDashboard).toContain('aria-label="User records"')
     expect(adminDashboard).toContain('Primary Admin')
+    expect(adminDashboard).toContain('class="badge text-bg-light admin-current-user-badge"')
     expect(adminDashboard).toContain('You')
     expect(adminDashboard).toContain('{{ user.username }}')
     expect(adminDashboard).toContain('{{ user.email }}')
@@ -51,5 +52,15 @@ describe('Admin Dashboard Users tab', () => {
     expect(userPanel).not.toContain('password')
     expect(userPanel).not.toContain('review')
     expect(userPanel).not.toContain('favorite')
+  })
+
+  it('keeps Admin tabs and current-user badge compact on mobile', () => {
+    expect(adminDashboard).toContain('class="admin-tabs mb-4"')
+    expect(adminDashboard).toMatch(/\.admin-tabs\s*\{[\s\S]*width: min\(100%, 32rem\)/)
+    expect(adminDashboard).toMatch(/\.admin-tab\s*\{[\s\S]*flex: 1 1 0/)
+    expect(adminDashboard).toMatch(/\.admin-tab\s*\{[\s\S]*min-width: 0/)
+    expect(adminDashboard).toContain('.admin-current-user-badge')
+    expect(adminDashboard).toMatch(/\.admin-current-user-badge\s*\{[\s\S]*width: auto/)
+    expect(adminDashboard).toMatch(/\.admin-current-user-badge\s*\{[\s\S]*padding: 0\.35rem 0\.55rem/)
   })
 })

@@ -659,7 +659,7 @@ onMounted(() => {
                     <div class="d-flex flex-wrap align-items-center gap-2 min-w-0">
                       <h4 class="h6 mb-0 text-truncate">{{ user.username }}</h4>
                       <span v-if="user.is_primary_admin" class="badge text-bg-primary">Primary Admin</span>
-                      <span v-if="user.is_current_user" class="badge text-bg-light admin-record-count">You</span>
+                      <span v-if="user.is_current_user" class="badge text-bg-light admin-current-user-badge">You</span>
                     </div>
                     <p class="small text-body-secondary mb-0 text-truncate">{{ user.email }}</p>
                   </div>
@@ -731,6 +731,15 @@ onMounted(() => {
 .admin-record-count {
   flex: 0 0 auto;
   padding: 0.55rem 0.75rem;
+  border: 1px solid var(--bs-border-color);
+  color: var(--bs-body-color) !important;
+  background: var(--bs-tertiary-bg) !important;
+}
+
+.admin-current-user-badge {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 0.35rem 0.55rem;
   border: 1px solid var(--bs-border-color);
   color: var(--bs-body-color) !important;
   background: var(--bs-tertiary-bg) !important;
@@ -870,7 +879,9 @@ onMounted(() => {
 }
 
 .admin-tabs {
-  display: inline-flex;
+  display: flex;
+  width: min(100%, 32rem);
+  max-width: 100%;
   gap: 0.35rem;
   padding: 0.35rem;
   border: 1px solid rgba(var(--swinburne-punch-rgb), 0.18);
@@ -880,8 +891,9 @@ onMounted(() => {
 }
 
 .admin-tab {
-  min-width: 8.5rem;
-  padding: 0.65rem 1.25rem;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0.65rem 0.85rem;
   border: 0;
   border-radius: 999px;
   color: var(--bs-body-color);
@@ -931,6 +943,10 @@ onMounted(() => {
   .admin-record-count,
   .admin-management-row__actions {
     width: 100%;
+  }
+
+  .admin-current-user-badge {
+    width: auto;
   }
 
   .admin-management-row__actions .btn {
