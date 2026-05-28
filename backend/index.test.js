@@ -1909,6 +1909,142 @@ describe('PATCH /api/admin/users/:id/role', () => {
     spy.mockRestore();
   });
 
+  it('supports the final role management flow without exposing private user data', async () => {
+    const initialUsers = [
+      {
+        id: 1,
+        username: 'primaryadmin',
+        email: 'primary@example.edu',
+        role: 'admin',
+        password_hash: 'secret-hash',
+        favorite_count: 7,
+        review_count: 4
+      },
+      {
+        id: 2,
+        username: 'currentadmin',
+        email: 'current@example.edu',
+        role: 'admin'
+      },
+      {
+        id: 3,
+        username: 'standardstudent',
+        email: 'student@example.edu',
+        role: 'student'
+      },
+      {
+        id: 4,
+        username: 'secondaryadmin',
+        email: 'secondary@example.edu',
+        role: 'admin'
+      }
+    ];
+    const refreshedUsers = [
+      {
+        id: 1,
+        username: 'primaryadmin',
+        email: 'primary@example.edu',
+        role: 'admin'
+      },
+      {
+        id: 2,
+        username: 'currentadmin',
+        email: 'current@example.edu',
+        role: 'admin'
+      },
+      {
+        id: 3,
+        username: 'standardstudent',
+        email: 'student@example.edu',
+        role: 'admin'
+      },
+      {
+        id: 4,
+        username: 'secondaryadmin',
+        email: 'secondary@example.edu',
+        role: 'student'
+      }
+    ];
+    const promotedUser = {
+      id: 3,
+      username: 'standardstudent',
+      email: 'student@example.edu',
+      role: 'admin'
+    };
+    const demotedUser = {
+      id: 4,
+      username: 'secondaryadmin',
+      email: 'secondary@example.edu',
+      role: 'student'
+    };
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce(initialUsers)
+        .mockResolvedValueOnce([{ id: 3, role: 'student' }])
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce([promotedUser])
+        .mockResolvedValueOnce([{ id: 4, role: 'admin' }])
+        .mockResolvedValueOnce([{ id: 1 }])
+        .mockResolvedValueOnce([{ admin_count: 3 }])
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce([demotedUser])
+        .mockResolvedValueOnce(refreshedUsers),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const firstList = await request(app)
+      .get('/api/admin/users')
+      .set('Cookie', adminCookie());
+    const promote = await request(app)
+      .patch('/api/admin/users/3/role')
+      .set('Cookie', adminCookie())
+      .send({ role: 'admin' });
+    const demote = await request(app)
+      .patch('/api/admin/users/4/role')
+      .set('Cookie', adminCookie())
+      .send({ role: 'student' });
+    const refreshedList = await request(app)
+      .get('/api/admin/users')
+      .set('Cookie', adminCookie());
+
+    expect(firstList.statusCode).toEqual(200);
+    expect(promote.statusCode).toEqual(200);
+    expect(demote.statusCode).toEqual(200);
+    expect(refreshedList.statusCode).toEqual(200);
+    expect(promote.body).toEqual({ status: 'ok', data: promotedUser });
+    expect(demote.body).toEqual({ status: 'ok', data: demotedUser });
+    expect(refreshedList.body.data.map((user) => ({ id: user.id, role: user.role }))).toEqual([
+      { id: 1, role: 'admin' },
+      { id: 2, role: 'admin' },
+      { id: 3, role: 'admin' },
+      { id: 4, role: 'student' }
+    ]);
+    expect(refreshedList.body.data[0]).toMatchObject({
+      id: 1,
+      is_primary_admin: true,
+      is_current_user: false
+    });
+    expect(refreshedList.body.data[1]).toMatchObject({
+      id: 2,
+      is_primary_admin: false,
+      is_current_user: true
+    });
+    expect(JSON.stringify(firstList.body)).not.toContain('password');
+    expect(JSON.stringify(firstList.body)).not.toContain('favorite');
+    expect(JSON.stringify(firstList.body)).not.toContain('review');
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      'SELECT id, username, email, role FROM Users ORDER BY id ASC'
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      10,
+      'SELECT id, username, email, role FROM Users ORDER BY id ASC'
+    );
+
+    spy.mockRestore();
+  });
+
   it('rejects guests, Students, and invalid sessions with existing admin access errors', async () => {
     const guestRes = await request(app)
       .patch('/api/admin/users/3/role')

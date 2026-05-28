@@ -599,6 +599,7 @@ onMounted(() => {
       >
         <h2 id="user-admin-heading" class="h3 mb-3">User role management</h2>
         <p class="text-body-secondary mb-3">
+          Role-only user management is limited to promotion and demotion. Protected rows explain why demotion is unavailable.
           Role changes apply immediately. The changed user may need to sign in again or refresh their session before access updates.
         </p>
         <BaseCard :stretch="false" :interactive="false">

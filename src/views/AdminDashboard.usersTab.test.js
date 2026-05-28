@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 
 const adminDashboard = readFileSync(new URL('./AdminDashboard.vue', import.meta.url), 'utf8')
+const userPanel = adminDashboard.match(/<section\s+v-show="activeAdminTab === 'users'"[\s\S]*?<\/section>/)?.[0] || ''
 
 describe('Admin Dashboard Users tab', () => {
   it('renders a read-only Users tab with search, counts, and role badges', () => {
@@ -38,5 +39,17 @@ describe('Admin Dashboard Users tab', () => {
     expect(adminDashboard).toContain("roleChangingUserId === user.id ? 'Updating' : 'Promote'")
     expect(adminDashboard).toContain("roleChangingUserId === user.id ? 'Updating' : 'Demote'")
     expect(adminDashboard).toContain('may need to sign in again or refresh their session')
+  })
+
+  it('keeps Users tab copy role-only and demo-safe', () => {
+    expect(userPanel).toContain('Role-only user management')
+    expect(userPanel).toContain('Protected rows explain why demotion is unavailable.')
+    expect(userPanel).toContain('Role changes apply immediately.')
+    expect(userPanel).toContain('The changed user may need to sign in again or refresh their session before access updates.')
+    expect(userPanel).not.toContain('Delete')
+    expect(userPanel).not.toContain('Edit')
+    expect(userPanel).not.toContain('password')
+    expect(userPanel).not.toContain('review')
+    expect(userPanel).not.toContain('favorite')
   })
 })
