@@ -30,9 +30,11 @@ const {
   courseSaving,
   deletingTutorId,
   deletingCourseId,
+  roleChangingUserId,
   tutorFormError,
   courseFormError,
   userLoadError,
+  userRoleError,
   error,
   success,
   editingTutorId,
@@ -47,7 +49,8 @@ const {
   deleteCourse,
   loadTutors,
   loadCourses,
-  loadUsers
+  loadUsers,
+  changeUserRole
 } = useAdminManagement({})
 
 const isEditingTutor = computed(() => editingTutorId.value !== null)
@@ -88,6 +91,17 @@ const tutorSearchResultCount = computed(() => courseTutorAssignment.value.search
 const hiddenTutorResultCount = computed(() => (
   Math.max(tutorSearchResultCount.value - availableCourseTutors.value.length, 0)
 ))
+const userDemotionUnavailableMessage = (user) => {
+  if (user.is_primary_admin) {
+    return 'Primary Admin cannot be demoted'
+  }
+
+  if (user.is_current_user) {
+    return 'You cannot demote your own account'
+  }
+
+  return ''
+}
 
 const resetCourseForm = () => {
   resetManagementCourseForm()
@@ -584,6 +598,9 @@ onMounted(() => {
         role="tabpanel"
       >
         <h2 id="user-admin-heading" class="h3 mb-3">User role management</h2>
+        <p class="text-body-secondary mb-3">
+          Role changes apply immediately. The changed user may need to sign in again or refresh their session before access updates.
+        </p>
         <BaseCard :stretch="false" :interactive="false">
           <template #header>
             <h3 class="h4 mb-0">User records</h3>
@@ -617,34 +634,73 @@ onMounted(() => {
             {{ userLoadError }}
           </div>
 
-          <div v-else-if="!hasUsers" class="alert alert-secondary mb-0" role="status">
-            No users are available yet.
-          </div>
+          <div v-else>
+            <div v-if="userRoleError" class="alert alert-danger mb-3" role="alert">
+              {{ userRoleError }}
+            </div>
 
-          <div v-else-if="filteredUsers.length === 0" class="alert alert-secondary mb-0" role="status">
-            No User records match "{{ userRecordSearchTerm }}".
-          </div>
+            <div v-if="!hasUsers" class="alert alert-secondary mb-0" role="status">
+              No users are available yet.
+            </div>
 
-          <div v-else class="admin-record-list" aria-label="User records">
-            <article
-              v-for="user in filteredUsers"
-              :key="user.id"
-              class="admin-management-row"
-            >
-              <div class="admin-management-row__body">
-                <div class="admin-management-row__heading">
-                  <div class="d-flex flex-wrap align-items-center gap-2 min-w-0">
-                    <h4 class="h6 mb-0 text-truncate">{{ user.username }}</h4>
-                    <span v-if="user.is_primary_admin" class="badge text-bg-primary">Primary Admin</span>
-                    <span v-if="user.is_current_user" class="badge text-bg-light admin-record-count">You</span>
+            <div v-else-if="filteredUsers.length === 0" class="alert alert-secondary mb-0" role="status">
+              No User records match "{{ userRecordSearchTerm }}".
+            </div>
+
+            <div v-else class="admin-record-list" aria-label="User records">
+              <article
+                v-for="user in filteredUsers"
+                :key="user.id"
+                class="admin-management-row"
+              >
+                <div class="admin-management-row__body">
+                  <div class="admin-management-row__heading">
+                    <div class="d-flex flex-wrap align-items-center gap-2 min-w-0">
+                      <h4 class="h6 mb-0 text-truncate">{{ user.username }}</h4>
+                      <span v-if="user.is_primary_admin" class="badge text-bg-primary">Primary Admin</span>
+                      <span v-if="user.is_current_user" class="badge text-bg-light admin-record-count">You</span>
+                    </div>
+                    <p class="small text-body-secondary mb-0 text-truncate">{{ user.email }}</p>
                   </div>
-                  <p class="small text-body-secondary mb-0 text-truncate">{{ user.email }}</p>
+                  <p class="small text-body-secondary mb-0">
+                    Role: <strong class="text-body text-capitalize">{{ user.role }}</strong>
+                  </p>
                 </div>
-                <p class="small text-body-secondary mb-0">
-                  Role: <strong class="text-body text-capitalize">{{ user.role }}</strong>
-                </p>
-              </div>
-            </article>
+                <div class="admin-management-row__actions" aria-label="User role actions">
+                  <button
+                    v-if="user.role === 'student'"
+                    class="btn btn-directory-action-secondary btn-sm"
+                    type="button"
+                    :disabled="roleChangingUserId === user.id"
+                    @click="changeUserRole({ userId: user.id, role: 'admin' })"
+                  >
+                    <span
+                      v-if="roleChangingUserId === user.id"
+                      class="spinner-border spinner-border-sm me-2"
+                      aria-hidden="true"
+                    ></span>
+                    {{ roleChangingUserId === user.id ? 'Updating' : 'Promote' }}
+                  </button>
+                  <button
+                    v-else-if="!user.is_primary_admin && !user.is_current_user"
+                    class="btn btn-directory-action-danger btn-sm"
+                    type="button"
+                    :disabled="roleChangingUserId === user.id"
+                    @click="changeUserRole({ userId: user.id, role: 'student' })"
+                  >
+                    <span
+                      v-if="roleChangingUserId === user.id"
+                      class="spinner-border spinner-border-sm me-2"
+                      aria-hidden="true"
+                    ></span>
+                    {{ roleChangingUserId === user.id ? 'Updating' : 'Demote' }}
+                  </button>
+                  <p v-else class="small text-body-secondary mb-0 admin-role-guard">
+                    {{ userDemotionUnavailableMessage(user) }}
+                  </p>
+                </div>
+              </article>
+            </div>
           </div>
         </BaseCard>
       </section>

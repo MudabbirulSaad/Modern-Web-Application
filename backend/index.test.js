@@ -1820,6 +1820,217 @@ describe('GET /api/admin/users', () => {
   });
 });
 
+describe('PATCH /api/admin/users/:id/role', () => {
+  const adminCookie = (overrides = {}) => {
+    const token = jwt.sign(
+      { id: 2, role: 'admin', ...overrides },
+      process.env.JWT_SECRET || 'development-jwt-secret',
+      { expiresIn: '1h' }
+    );
+
+    return [`auth_token=${token}`];
+  };
+
+  const studentCookie = () => adminCookie({ id: 3, role: 'student' });
+
+  it('allows authenticated admins to promote Students to Admin', async () => {
+    const updatedUser = {
+      id: 3,
+      username: 'standardstudent',
+      email: 'student@example.edu',
+      role: 'admin'
+    };
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ id: 3, role: 'student' }])
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce([updatedUser]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .patch('/api/admin/users/3/role')
+      .set('Cookie', adminCookie())
+      .send({ role: 'admin' });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: updatedUser });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      1,
+      'SELECT id, role FROM Users WHERE id = ? LIMIT 1',
+      [3]
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      'UPDATE Users SET role = ? WHERE id = ?',
+      ['admin', 3]
+    );
+    expect(mockConn.release).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('allows authenticated admins to demote other non-primary Admins to Student', async () => {
+    const updatedUser = {
+      id: 4,
+      username: 'secondaryadmin',
+      email: 'secondary@example.edu',
+      role: 'student'
+    };
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ id: 4, role: 'admin' }])
+        .mockResolvedValueOnce([{ id: 1 }])
+        .mockResolvedValueOnce([{ admin_count: 2 }])
+        .mockResolvedValueOnce({ affectedRows: 1 })
+        .mockResolvedValueOnce([updatedUser]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .patch('/api/admin/users/4/role')
+      .set('Cookie', adminCookie())
+      .send({ role: 'student' });
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toEqual({ status: 'ok', data: updatedUser });
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      2,
+      'SELECT id FROM Users ORDER BY id ASC LIMIT 1'
+    );
+    expect(mockConn.query).toHaveBeenNthCalledWith(
+      3,
+      'SELECT COUNT(*) AS admin_count FROM Users WHERE role = ?',
+      ['admin']
+    );
+
+    spy.mockRestore();
+  });
+
+  it('rejects guests, Students, and invalid sessions with existing admin access errors', async () => {
+    const guestRes = await request(app)
+      .patch('/api/admin/users/3/role')
+      .send({ role: 'admin' });
+    const studentRes = await request(app)
+      .patch('/api/admin/users/3/role')
+      .set('Cookie', studentCookie())
+      .send({ role: 'admin' });
+    const invalidRes = await request(app)
+      .patch('/api/admin/users/3/role')
+      .set('Cookie', ['auth_token=not-a-token'])
+      .send({ role: 'admin' });
+
+    expect(guestRes.statusCode).toEqual(401);
+    expect(guestRes.body).toEqual({ status: 'error', message: 'Authentication required' });
+    expect(studentRes.statusCode).toEqual(403);
+    expect(studentRes.body).toEqual({ status: 'error', message: 'Admin access required' });
+    expect(invalidRes.statusCode).toEqual(401);
+    expect(invalidRes.body).toEqual({ status: 'error', message: 'Authentication required' });
+  });
+
+  it('rejects invalid requested roles before changing users', async () => {
+    const mockConn = {
+      query: jest.fn(),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .patch('/api/admin/users/3/role')
+      .set('Cookie', adminCookie())
+      .send({ role: 'owner' });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'Role must be admin or student' });
+    expect(mockConn.query).not.toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it('rejects missing target users', async () => {
+    const mockConn = {
+      query: jest.fn().mockResolvedValueOnce([]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .patch('/api/admin/users/99/role')
+      .set('Cookie', adminCookie())
+      .send({ role: 'admin' });
+
+    expect(res.statusCode).toEqual(404);
+    expect(res.body).toEqual({ status: 'error', message: 'User not found' });
+    expect(mockConn.query).toHaveBeenCalledTimes(1);
+
+    spy.mockRestore();
+  });
+
+  it('rejects self-demotion', async () => {
+    const mockConn = {
+      query: jest.fn().mockResolvedValueOnce([{ id: 2, role: 'admin' }]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .patch('/api/admin/users/2/role')
+      .set('Cookie', adminCookie())
+      .send({ role: 'student' });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'Admins cannot demote their own account' });
+    expect(mockConn.query).toHaveBeenCalledTimes(1);
+
+    spy.mockRestore();
+  });
+
+  it('rejects demotion of the Primary Admin', async () => {
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ id: 1, role: 'admin' }])
+        .mockResolvedValueOnce([{ id: 1 }]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .patch('/api/admin/users/1/role')
+      .set('Cookie', adminCookie())
+      .send({ role: 'student' });
+
+    expect(res.statusCode).toEqual(400);
+    expect(res.body).toEqual({ status: 'error', message: 'Primary Admin cannot be demoted' });
+    expect(mockConn.query).toHaveBeenCalledTimes(2);
+
+    spy.mockRestore();
+  });
+
+  it('rejects demotion that would leave the system without an Admin', async () => {
+    const mockConn = {
+      query: jest.fn()
+        .mockResolvedValueOnce([{ id: 4, role: 'admin' }])
+        .mockResolvedValueOnce([{ id: 1 }])
+        .mockResolvedValueOnce([{ admin_count: 1 }]),
+      release: jest.fn()
+    };
+    const spy = jest.spyOn(pool, 'getConnection').mockResolvedValue(mockConn);
+
+    const res = await request(app)
+      .patch('/api/admin/users/4/role')
+      .set('Cookie', adminCookie())
+      .send({ role: 'student' });
+
+    expect(res.statusCode).toEqual(409);
+    expect(res.body).toEqual({ status: 'error', message: 'At least one Admin must remain' });
+    expect(mockConn.query).toHaveBeenCalledTimes(3);
+
+    spy.mockRestore();
+  });
+});
+
 describe('POST /api/auth/login', () => {
   it('should log in a user and issue an HttpOnly JWT cookie', async () => {
     const passwordHash = await bcrypt.hash('securepass123', 12);

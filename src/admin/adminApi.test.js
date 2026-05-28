@@ -8,6 +8,7 @@ import {
   listCourses,
   listUsers,
   listTutors,
+  updateUserRole,
   updateCourse,
   updateTutor
 } from './adminApi.js'
@@ -154,5 +155,47 @@ describe('admin API adapter', () => {
     const fetcher = jest.fn(async () => jsonResponse({ ok: false, body: {} }))
 
     await expect(listUsers({ fetcher })).rejects.toThrow('Unable to load users')
+  })
+
+  it('updates admin user roles with credentials and JSON payloads', async () => {
+    const updatedUser = {
+      id: 3,
+      username: 'standardstudent',
+      email: 'student@example.edu',
+      role: 'admin'
+    }
+    const fetcher = jest.fn(async () => jsonResponse({ body: { data: updatedUser } }))
+
+    await expect(updateUserRole({
+      userId: 3,
+      role: 'admin',
+      fetcher
+    })).resolves.toEqual(updatedUser)
+
+    expect(fetcher).toHaveBeenCalledWith('/api/admin/users/3/role', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ role: 'admin' })
+    })
+  })
+
+  it('maps admin user role update failures to backend or fallback messages', async () => {
+    const backendFailure = jest.fn(async () => jsonResponse({
+      ok: false,
+      body: { message: 'Primary Admin cannot be demoted' }
+    }))
+    const fallbackFailure = jest.fn(async () => jsonResponse({ ok: false, body: {} }))
+
+    await expect(updateUserRole({
+      userId: 1,
+      role: 'student',
+      fetcher: backendFailure
+    })).rejects.toThrow('Primary Admin cannot be demoted')
+    await expect(updateUserRole({
+      userId: 3,
+      role: 'admin',
+      fetcher: fallbackFailure
+    })).rejects.toThrow('Unable to update user role')
   })
 })

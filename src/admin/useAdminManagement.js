@@ -40,9 +40,11 @@ export const useAdminManagement = ({
   const courseSaving = ref(false)
   const deletingTutorId = ref(null)
   const deletingCourseId = ref(null)
+  const roleChangingUserId = ref(null)
   const tutorFormError = ref('')
   const courseFormError = ref('')
   const userLoadError = ref('')
+  const userRoleError = ref('')
   const error = ref('')
   const success = ref('')
   const editingTutorId = ref(null)
@@ -85,6 +87,25 @@ export const useAdminManagement = ({
       userLoadError.value = 'Users are unavailable right now. Please try again shortly.'
     } finally {
       loadingUsers.value = false
+    }
+  }
+
+  const changeUserRole = async ({ userId, role }) => {
+    userRoleError.value = ''
+    success.value = ''
+    roleChangingUserId.value = userId
+
+    try {
+      await adminApi.updateUserRole({ userId, role })
+      await loadUsers()
+      success.value = 'User role updated. The changed user may need to sign in again or refresh their session before access updates.'
+
+      return true
+    } catch (err) {
+      userRoleError.value = err.message || 'Unable to update user role.'
+      return false
+    } finally {
+      roleChangingUserId.value = null
     }
   }
 
@@ -296,9 +317,11 @@ export const useAdminManagement = ({
     courseSaving,
     deletingTutorId,
     deletingCourseId,
+    roleChangingUserId,
     tutorFormError,
     courseFormError,
     userLoadError,
+    userRoleError,
     error,
     success,
     editingTutorId,
@@ -308,6 +331,7 @@ export const useAdminManagement = ({
     loadTutors,
     loadCourses,
     loadUsers,
+    changeUserRole,
     resetTutorForm,
     resetCourseForm,
     saveTutor,

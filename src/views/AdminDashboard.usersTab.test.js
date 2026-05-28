@@ -19,12 +19,24 @@ describe('Admin Dashboard Users tab', () => {
     expect(adminDashboard).toContain('{{ user.role }}')
   })
 
-  it('covers loading, empty, error, and no-match states without role action controls', () => {
+  it('covers loading, empty, error, and no-match states', () => {
     expect(adminDashboard).toContain('Loading users')
     expect(adminDashboard).toContain('{{ userLoadError }}')
     expect(adminDashboard).toContain('No users are available yet.')
     expect(adminDashboard).toContain('No User records match "{{ userRecordSearchTerm }}".')
-    expect(adminDashboard).not.toContain('Promote')
-    expect(adminDashboard).not.toContain('Demote')
+  })
+
+  it('renders guarded role actions and protected demotion messaging', () => {
+    expect(adminDashboard).toContain('{{ userRoleError }}')
+    expect(adminDashboard).toContain("changeUserRole({ userId: user.id, role: 'admin' })")
+    expect(adminDashboard).toContain("changeUserRole({ userId: user.id, role: 'student' })")
+    expect(adminDashboard).toContain('Promote')
+    expect(adminDashboard).toContain('Demote')
+    expect(adminDashboard).toContain('Primary Admin cannot be demoted')
+    expect(adminDashboard).toContain('You cannot demote your own account')
+    expect(adminDashboard).toContain("roleChangingUserId === user.id")
+    expect(adminDashboard).toContain("roleChangingUserId === user.id ? 'Updating' : 'Promote'")
+    expect(adminDashboard).toContain("roleChangingUserId === user.id ? 'Updating' : 'Demote'")
+    expect(adminDashboard).toContain('may need to sign in again or refresh their session')
   })
 })

@@ -10,6 +10,12 @@ const createWorkflow = (overrides = {}) => {
     updateCourse: jest.fn(async () => ({ id: 2 })),
     deleteCourse: jest.fn(async () => null),
     fetchCourse: jest.fn(async () => ({ id: 2, tutor_ids: '1,3' })),
+    updateUserRole: jest.fn(async () => ({
+      id: 2,
+      username: 'currentadmin',
+      email: 'current@example.edu',
+      role: 'admin'
+    })),
     listUsers: jest.fn(async () => [
       {
         id: 1,
@@ -73,6 +79,90 @@ describe('admin management workflow', () => {
     expect(workflow.users.value).toEqual([])
     expect(workflow.loadingUsers.value).toBe(false)
     expect(workflow.userLoadError.value).toBe('Users are unavailable right now. Please try again shortly.')
+  })
+
+  it('changes a user role, refreshes Users, and shows the session caveat', async () => {
+    const { adminApi, workflow } = createWorkflow({
+      adminApi: {
+        listUsers: jest.fn()
+          .mockResolvedValueOnce([
+            {
+              id: 3,
+              username: 'standardstudent',
+              email: 'student@example.edu',
+              role: 'student',
+              is_primary_admin: false,
+              is_current_user: false
+            }
+          ])
+          .mockResolvedValueOnce([
+            {
+              id: 3,
+              username: 'standardstudent',
+              email: 'student@example.edu',
+              role: 'admin',
+              is_primary_admin: false,
+              is_current_user: false
+            }
+          ])
+      }
+    })
+
+    await workflow.loadUsers()
+    const changed = await workflow.changeUserRole({
+      userId: 3,
+      role: 'admin'
+    })
+
+    expect(changed).toBe(true)
+    expect(adminApi.updateUserRole).toHaveBeenCalledWith({ userId: 3, role: 'admin' })
+    expect(adminApi.listUsers).toHaveBeenCalledTimes(2)
+    expect(workflow.users.value).toEqual([
+      {
+        id: 3,
+        username: 'standardstudent',
+        email: 'student@example.edu',
+        role: 'admin',
+        is_primary_admin: false,
+        is_current_user: false
+      }
+    ])
+    expect(workflow.success.value).toBe('User role updated. The changed user may need to sign in again or refresh their session before access updates.')
+    expect(workflow.userRoleError.value).toBe('')
+    expect(workflow.roleChangingUserId.value).toBe(null)
+  })
+
+  it('reports role change failures without mutating the visible Users list', async () => {
+    const users = [
+      {
+        id: 1,
+        username: 'primaryadmin',
+        email: 'primary@example.edu',
+        role: 'admin',
+        is_primary_admin: true,
+        is_current_user: false
+      }
+    ]
+    const { workflow } = createWorkflow({
+      adminApi: {
+        listUsers: jest.fn(async () => users),
+        updateUserRole: jest.fn(async () => {
+          throw new Error('Primary Admin cannot be demoted')
+        })
+      }
+    })
+
+    await workflow.loadUsers()
+    const changed = await workflow.changeUserRole({
+      userId: 1,
+      role: 'student'
+    })
+
+    expect(changed).toBe(false)
+    expect(workflow.users.value).toEqual(users)
+    expect(workflow.userRoleError.value).toBe('Primary Admin cannot be demoted')
+    expect(workflow.success.value).toBe('')
+    expect(workflow.roleChangingUserId.value).toBe(null)
   })
 
   it('saves a new tutor, resets the form, and reloads tutors and courses', async () => {

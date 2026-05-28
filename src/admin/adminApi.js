@@ -37,6 +37,14 @@ const listUsers = async ({ fetcher = fetch } = {}) => {
   return parseAdminResponse(response, 'Unable to load users')
 }
 
+const updateUserRole = ({ userId, role, fetcher = fetch }) => jsonRequest({
+  fetcher,
+  url: `/api/admin/users/${userId}/role`,
+  method: 'PATCH',
+  body: { role },
+  fallbackMessage: 'Unable to update user role'
+})
+
 const fetchCourse = async ({ courseId, fetcher = fetch }) => {
   const response = await fetcher(`/api/courses/${courseId}`)
 
@@ -97,6 +105,7 @@ export const adminApi = {
   listTutors,
   listCourses,
   listUsers,
+  updateUserRole,
   fetchCourse,
   createTutor,
   updateTutor,
@@ -110,6 +119,7 @@ export {
   listTutors,
   listCourses,
   listUsers,
+  updateUserRole,
   fetchCourse,
   createTutor,
   updateTutor,
