@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  db:
+    image: mariadb:latest
+    container_name: tutor-db
+    restart: always
+    environment:
+      MARIADB_ROOT_PASSWORD: rootpassword
+      MARIADB_DATABASE: tutordb
+      MARIADB_USER: tutoruser
+      MARIADB_PASSWORD: tutorpassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - tutor_db_data:/var/lib/mysql
+
+volumes:
+  tutor_db_data:
