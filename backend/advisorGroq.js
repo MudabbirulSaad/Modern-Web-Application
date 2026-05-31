@@ -1,3 +1,5 @@
+import nodeFetch from 'node-fetch';
+
 const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-20b';
 const DEFAULT_TIMEOUT_MS = 4000;
@@ -114,9 +116,10 @@ export const rankRecommendationsWithGroq = async (preferences, recommendations, 
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+  const fetcher = options.fetcher || globalThis.fetch || nodeFetch;
 
   try {
-    const response = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
+    const response = await fetcher(`${GROQ_BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
