@@ -572,7 +572,7 @@ describe('Protected tutor management endpoints', () => {
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(
       2,
-      'INSERT INTO Tutors (name, department, bio) VALUES (?, ?, ?)',
+      'INSERT INTO Tutors (name, department, bio, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
       ['Dr Nora Banks', 'Computer Science', 'Teaches client-side engineering and accessibility.']
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(
@@ -672,7 +672,7 @@ describe('Protected tutor management endpoints', () => {
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(
       2,
-      'UPDATE Tutors SET name = ?, department = ?, bio = ? WHERE id = ?',
+      'UPDATE Tutors SET name = ?, department = ?, bio = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       ['Dr Nora Banks', 'Software Engineering', 'Leads frontend architecture and accessibility studios.', '4']
     );
     expect(mockConn.release).toHaveBeenCalled();
@@ -1225,7 +1225,7 @@ describe('Protected course management endpoints', () => {
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(
       3,
-      'INSERT INTO Courses (title, department, description) VALUES (?, ?, ?)',
+      'INSERT INTO Courses (title, department, description, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
       ['COS10005 Web Development', 'Computer Science', 'Build accessible web applications.']
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(
@@ -1390,7 +1390,7 @@ describe('Protected course management endpoints', () => {
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(
       3,
-      'UPDATE Courses SET title = ?, department = ?, description = ? WHERE id = ?',
+      'UPDATE Courses SET title = ?, department = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       ['COS10005 Web Development', 'Computer Science', 'Build accessible and responsive web applications.', '4']
     );
     expect(mockConn.query).toHaveBeenNthCalledWith(

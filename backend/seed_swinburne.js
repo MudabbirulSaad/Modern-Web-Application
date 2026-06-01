@@ -108,27 +108,41 @@ const roundRobinTutorNames = [
 ];
 
 const upsertTutor = async (conn, [name, department, bio]) => {
+  const existing = await conn.query(
+    'SELECT id FROM Tutors WHERE name = ? AND department = ? LIMIT 1',
+    [name, department]
+  );
+
+  if (existing.length > 0) {
+    await conn.query(
+      'UPDATE Tutors SET bio = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [bio, existing[0].id]
+    );
+    return;
+  }
+
   await conn.query(
-    `
-      INSERT INTO Tutors (name, department, bio)
-      VALUES (?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        bio = VALUES(bio),
-        updated_at = CURRENT_TIMESTAMP
-    `,
+    'INSERT INTO Tutors (name, department, bio, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
     [name, department, bio]
   );
 };
 
 const upsertCourse = async (conn, [title, department, description]) => {
+  const existing = await conn.query(
+    'SELECT id FROM Courses WHERE title = ? AND department = ? LIMIT 1',
+    [title, department]
+  );
+
+  if (existing.length > 0) {
+    await conn.query(
+      'UPDATE Courses SET description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [description, existing[0].id]
+    );
+    return;
+  }
+
   await conn.query(
-    `
-      INSERT INTO Courses (title, department, description)
-      VALUES (?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        description = VALUES(description),
-        updated_at = CURRENT_TIMESTAMP
-    `,
+    'INSERT INTO Courses (title, department, description, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
     [title, department, description]
   );
 };

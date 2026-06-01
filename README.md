@@ -171,6 +171,7 @@ npm run build
 
 - Course Department refers to the discovery category attached to Course records.
 - Tutor staff affiliation refers to the academic unit shown on Tutor profiles and admin Tutor records.
+- Tutor records still store this value in the existing `department` field.
 - The first registered user becomes the first Admin.
 - The Primary Admin is the user with the lowest `Users.id` and cannot be demoted.
 - Admin user management is role-only; it does not include profile editing, password reset, review moderation, favourite inspection, or user deletion.

@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:mercury": "VITE_BASE_PATH=/cos30043/s105281389/swindir/ vite build",
     "preview": "vite preview",
     "server": "node backend/index.js",
     "db:init": "node backend/setup_db.js",

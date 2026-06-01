@@ -167,7 +167,7 @@ router.post('/', requireAdmin, async (req, res) => {
     }
 
     const result = await conn.query(
-      'INSERT INTO Courses (title, department, description) VALUES (?, ?, ?)',
+      'INSERT INTO Courses (title, department, description, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
       [title, department, description]
     );
     const courseId = Number(result.insertId);
@@ -222,7 +222,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
     }
 
     const result = await conn.query(
-      'UPDATE Courses SET title = ?, department = ?, description = ? WHERE id = ?',
+      'UPDATE Courses SET title = ?, department = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [title, department, description, req.params.id]
     );
 
