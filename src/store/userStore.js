@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { apiUrl } from '../api/url.js'
 
 let sessionRequest = null
 const themeModes = ['light', 'dark', 'auto']
@@ -44,7 +45,7 @@ export const useUserStore = defineStore('user', {
       this.loading = true
       this.error = null
 
-      sessionRequest = fetch('/api/auth/session', {
+      sessionRequest = fetch(apiUrl('/api/auth/session'), {
         method: 'GET',
         credentials: 'include'
       })
@@ -81,7 +82,7 @@ export const useUserStore = defineStore('user', {
       this.error = null
 
       try {
-        const response = await fetch('/api/auth/login', {
+        const response = await fetch(apiUrl('/api/auth/login'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -111,7 +112,7 @@ export const useUserStore = defineStore('user', {
       this.error = null
 
       try {
-        const response = await fetch('/api/auth/logout', {
+        const response = await fetch(apiUrl('/api/auth/logout'), {
           method: 'POST',
           credentials: 'include'
         })

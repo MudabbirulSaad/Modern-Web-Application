@@ -1,4 +1,5 @@
 import { computed, ref, watch } from 'vue'
+import { apiUrl } from '../api/url.js'
 
 export const DEFAULT_DIRECTORY_SORT_OPTIONS = [
   { value: 'best-match', label: 'Best Match' },
@@ -45,7 +46,7 @@ export const useDirectoryBrowsing = ({
     params.set('sort', sortOrder.value)
 
     const queryString = params.toString()
-    return `${endpoint}${queryString ? `?${queryString}` : ''}`
+    return apiUrl(`${endpoint}${queryString ? `?${queryString}` : ''}`)
   }
 
   const fetchItems = async () => {

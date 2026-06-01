@@ -4,6 +4,7 @@ import { RouterLink, useRoute } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
 import FavoriteButton from '../components/common/FavoriteButton.vue'
 import ReviewSection from '../components/ReviewSection.vue'
+import { apiUrl } from '../api/url.js'
 import { useFavoriteWorkflow } from '../favorites/useFavoriteWorkflow.js'
 import { useUserStore } from '../store/userStore'
 
@@ -28,7 +29,7 @@ const toggleFavorite = () => favoriteWorkflow.toggleFavorite(tutor.value)
 
 onMounted(async () => {
   try {
-    const response = await fetch(`/api/tutors/${route.params.id}`, {
+    const response = await fetch(apiUrl(`/api/tutors/${route.params.id}`), {
       credentials: 'include'
     })
 

@@ -1,3 +1,5 @@
+import { apiUrl } from '../api/url.js'
+
 const readJson = async (response) => {
   const payload = await response.json()
 
@@ -14,7 +16,7 @@ export const reviewApi = {
       entity_type: entityType,
       entity_id: String(entityId)
     })
-    const response = await fetch(`/api/reviews?${params.toString()}`, {
+    const response = await fetch(apiUrl(`/api/reviews?${params.toString()}`), {
       credentials: 'include'
     })
 
@@ -22,7 +24,7 @@ export const reviewApi = {
   },
 
   async createReview({ entityType, entityId, rating, comment }) {
-    const response = await fetch('/api/reviews', {
+    const response = await fetch(apiUrl('/api/reviews'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -40,7 +42,7 @@ export const reviewApi = {
   },
 
   async updateReview({ reviewId, rating, comment }) {
-    const response = await fetch(`/api/reviews/${reviewId}`, {
+    const response = await fetch(apiUrl(`/api/reviews/${reviewId}`), {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
@@ -56,7 +58,7 @@ export const reviewApi = {
   },
 
   async deleteReview({ reviewId }) {
-    const response = await fetch(`/api/reviews/${reviewId}`, {
+    const response = await fetch(apiUrl(`/api/reviews/${reviewId}`), {
       method: 'DELETE',
       credentials: 'include'
     })
@@ -65,7 +67,7 @@ export const reviewApi = {
   },
 
   async toggleUpvote({ reviewId }) {
-    const response = await fetch(`/api/reviews/${reviewId}/upvote`, {
+    const response = await fetch(apiUrl(`/api/reviews/${reviewId}/upvote`), {
       method: 'POST',
       credentials: 'include'
     })

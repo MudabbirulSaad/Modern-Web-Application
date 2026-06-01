@@ -1,3 +1,5 @@
+import { apiUrl } from '../api/url.js'
+
 const parseFavoriteResponse = async (response, fallbackMessage) => {
   const payload = await response.json().catch(() => ({}))
 
@@ -9,7 +11,7 @@ const parseFavoriteResponse = async (response, fallbackMessage) => {
 }
 
 const requestFavorite = async ({ entityType, entityId, method, fetcher = fetch }) => {
-  const response = await fetcher('/api/me/favorites', {
+  const response = await fetcher(apiUrl('/api/me/favorites'), {
     method,
     headers: {
       'Content-Type': 'application/json'
@@ -25,7 +27,7 @@ const requestFavorite = async ({ entityType, entityId, method, fetcher = fetch }
 }
 
 const fetchCurrentFavorites = async ({ fetcher = fetch } = {}) => {
-  const response = await fetcher('/api/me/favorites', {
+  const response = await fetcher(apiUrl('/api/me/favorites'), {
     credentials: 'include'
   })
 

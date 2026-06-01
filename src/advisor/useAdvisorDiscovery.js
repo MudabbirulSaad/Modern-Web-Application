@@ -1,4 +1,5 @@
 import { computed, ref } from 'vue'
+import { apiUrl } from '../api/url.js'
 
 export const ADVISOR_INTEREST_AREAS = [
   'Not sure yet',
@@ -83,7 +84,7 @@ export const useAdvisorDiscovery = ({
     error.value = ''
 
     try {
-      const response = await fetcher('/api/advisor/recommendations', {
+      const response = await fetcher(apiUrl('/api/advisor/recommendations'), {
         method: 'POST',
         credentials: 'include',
         headers: {

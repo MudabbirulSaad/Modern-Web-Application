@@ -5,6 +5,7 @@ import BaseCard from '../components/common/BaseCard.vue'
 import BaseTransitionList from '../components/common/BaseTransitionList.vue'
 import FavoriteButton from '../components/common/FavoriteButton.vue'
 import PaginationControls from '../components/common/PaginationControls.vue'
+import { apiUrl } from '../api/url.js'
 import { DEFAULT_DIRECTORY_SORT_OPTIONS, useDirectoryBrowsing } from '../directory/useDirectoryBrowsing.js'
 import { useFavoriteWorkflow } from '../favorites/useFavoriteWorkflow.js'
 import { useUserStore } from '../store/userStore'
@@ -15,7 +16,7 @@ const userStore = useUserStore()
 const route = useRoute()
 
 const directory = useDirectoryBrowsing({
-  endpoint: '/api/courses',
+  endpoint: apiUrl('/api/courses'),
   pageLimit: PAGE_LIMIT,
   errorMessage: 'Courses are unavailable right now. Please try again shortly.',
   initialDepartment: route.query.department

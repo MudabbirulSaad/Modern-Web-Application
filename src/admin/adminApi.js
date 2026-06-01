@@ -1,3 +1,5 @@
+import { apiUrl } from '../api/url.js'
+
 const parseAdminResponse = async (response, fallbackMessage) => {
   const payload = await response.json().catch(() => ({}))
 
@@ -8,7 +10,7 @@ const parseAdminResponse = async (response, fallbackMessage) => {
   return payload.data || null
 }
 
-const jsonRequest = ({ fetcher, url, method, body, fallbackMessage }) => fetcher(url, {
+const jsonRequest = ({ fetcher, url, method, body, fallbackMessage }) => fetcher(apiUrl(url), {
   method,
   headers: {
     'Content-Type': 'application/json'
@@ -18,19 +20,19 @@ const jsonRequest = ({ fetcher, url, method, body, fallbackMessage }) => fetcher
 }).then((response) => parseAdminResponse(response, fallbackMessage))
 
 const listTutors = async ({ fetcher = fetch } = {}) => {
-  const response = await fetcher('/api/tutors')
+  const response = await fetcher(apiUrl('/api/tutors'))
 
   return parseAdminResponse(response, 'Unable to load tutors')
 }
 
 const listCourses = async ({ fetcher = fetch } = {}) => {
-  const response = await fetcher('/api/courses')
+  const response = await fetcher(apiUrl('/api/courses'))
 
   return parseAdminResponse(response, 'Unable to load courses')
 }
 
 const listUsers = async ({ fetcher = fetch } = {}) => {
-  const response = await fetcher('/api/admin/users', {
+  const response = await fetcher(apiUrl('/api/admin/users'), {
     credentials: 'include'
   })
 
@@ -46,7 +48,7 @@ const updateUserRole = ({ userId, role, fetcher = fetch }) => jsonRequest({
 })
 
 const fetchCourse = async ({ courseId, fetcher = fetch }) => {
-  const response = await fetcher(`/api/courses/${courseId}`)
+  const response = await fetcher(apiUrl(`/api/courses/${courseId}`))
 
   return parseAdminResponse(response, 'Unable to load course details')
 }
@@ -68,7 +70,7 @@ const updateTutor = ({ tutorId, name, department, bio, fetcher = fetch }) => jso
 })
 
 const deleteTutor = async ({ tutorId, fetcher = fetch }) => {
-  const response = await fetcher(`/api/tutors/${tutorId}`, {
+  const response = await fetcher(apiUrl(`/api/tutors/${tutorId}`), {
     method: 'DELETE',
     credentials: 'include'
   })
@@ -93,7 +95,7 @@ const updateCourse = ({ courseId, title, department, description, tutorIds, fetc
 })
 
 const deleteCourse = async ({ courseId, fetcher = fetch }) => {
-  const response = await fetcher(`/api/courses/${courseId}`, {
+  const response = await fetcher(apiUrl(`/api/courses/${courseId}`), {
     method: 'DELETE',
     credentials: 'include'
   })

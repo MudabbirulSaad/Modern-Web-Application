@@ -1,8 +1,9 @@
 import { computed, ref } from 'vue'
+import { apiUrl } from '../api/url.js'
 import { buildDepartmentSummaries } from './departmentSummaries.js'
 
-const COURSE_DIRECTORY_URL = '/api/courses?sort=alphabetical'
-const TUTOR_DIRECTORY_URL = '/api/tutors?sort=alphabetical'
+const COURSE_DIRECTORY_URL = apiUrl('/api/courses?sort=alphabetical')
+const TUTOR_DIRECTORY_URL = apiUrl('/api/tutors?sort=alphabetical')
 
 const readDirectoryData = async (response) => {
   if (!response.ok) {

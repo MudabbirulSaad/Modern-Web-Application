@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import BaseCard from '../components/common/BaseCard.vue'
 import FavoriteButton from '../components/common/FavoriteButton.vue'
+import { apiUrl } from '../api/url.js'
 import { favoriteApi } from '../favorites/favoriteApi.js'
 import { useFavoriteWorkflow } from '../favorites/useFavoriteWorkflow.js'
 import { useUserStore } from '../store/userStore'
@@ -55,7 +56,7 @@ onMounted(async () => {
   try {
     const [favoritesPayload, reviewsResponse] = await Promise.all([
       favoriteApi.fetchCurrentFavorites(),
-      fetch(`/api/users/${userStore.userId}/reviews`, {
+      fetch(apiUrl(`/api/users/${userStore.userId}/reviews`), {
         credentials: 'include'
       })
     ])
