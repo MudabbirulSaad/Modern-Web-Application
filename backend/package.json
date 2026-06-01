@@ -1,0 +1,25 @@
+{
+  "name": "swindirectory-backend",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Backend deployment package for SwinDirectory on Mercury.",
+  "type": "module",
+  "engines": {
+    "node": ">=16.20.0",
+    "npm": ">=8.19.0"
+  },
+  "scripts": {
+    "server": "node index.js",
+    "db:init": "node setup_db.js",
+    "db:seed": "node seed_swinburne.js"
+  },
+  "dependencies": {
+    "bcryptjs": "2.4.3",
+    "cookie-parser": "1.4.7",
+    "cors": "2.8.6",
+    "dotenv": "17.4.2",
+    "express": "4.21.2",
+    "jsonwebtoken": "9.0.3",
+    "mariadb": "3.4.5"
+  }
+}

@@ -1,7 +1,7 @@
 import request from 'supertest';
 import app from './app.js';
 import pool from './db';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { jest } from '@jest/globals';
 

@@ -1,5 +1,5 @@
 import express from 'express';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import pool from '../db.js';
 import { AUTH_COOKIE_NAME, JWT_SECRET, decodeAuthCookie } from '../middleware/auth.js';

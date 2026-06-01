@@ -1,0 +1,11 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase __MERCURY_BASE_PATH__
+
+  RewriteRule ^api/(.*)$ http://127.0.0.1:__MERCURY_BACKEND_PORT__/api/$1 [P,L,QSA]
+
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . __MERCURY_BASE_PATH__index.html [L]
+</IfModule>
