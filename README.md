@@ -108,12 +108,12 @@ Install dependencies:
 npm install
 ```
 
-Create a `.env` file:
+Create a local `.env` file. These values match `backend/.env.example`; replace the password and account details for your own MariaDB installation:
 
 ```bash
 DB_HOST=localhost
 DB_USER=root
-DB_PASSWORD=password
+DB_PASSWORD=replace-with-local-password
 DB_NAME=modern_web_app
 JWT_SECRET=replace-with-a-development-secret
 
