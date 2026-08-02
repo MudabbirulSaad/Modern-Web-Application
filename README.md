@@ -5,10 +5,7 @@
 ### COS30043 Interface Design and Development
 ### Building a Modern Web Application
 
-<p>
-  <strong>Mudabbirul Saad</strong><br>
-  Student ID: <strong>105281389</strong>
-</p>
+<p><strong>Mudabbirul Saad</strong></p>
 
 <p>
   Vue 3 / Vite / Bootstrap 5 / Express / MariaDB / Pinia / Jest
@@ -137,6 +134,10 @@ Run the application:
 ```bash
 npm run dev:all
 ```
+
+For deployment under a university or other nested path, set `VITE_BASE_PATH`
+to the assigned public path before running `npm run build:mercury`. The
+repository intentionally does not contain a student-specific deployment path.
 
 Default development URLs:
 

@@ -9,7 +9,7 @@ dotenv.config({ path: path.join(projectRoot, '.env') })
 const templatePath = path.join(projectRoot, 'config', 'mercury', '.htaccess.template')
 const outputPath = path.join(projectRoot, 'dist', '.htaccess')
 
-const basePath = process.env.VITE_BASE_PATH || '/cos30043/s105281389/swindir/'
+const basePath = process.env.VITE_BASE_PATH || '/swindirectory/'
 const backendPort = process.env.MERCURY_BACKEND_PORT || '41389'
 
 const normalizedBasePath = basePath.endsWith('/') ? basePath : `${basePath}/`
